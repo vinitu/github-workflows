@@ -43,7 +43,7 @@ jobs:
 
           target_branch="${TARGET_BRANCH_INPUT:-main}"
           merged_any="false"
-          merged_entries=""
+          merged_entries=()
 
           event_name="${EVENT_NAME:-workflow_run}"
           if [ "$event_name" = "pull_request" ]; then
@@ -92,11 +92,11 @@ jobs:
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
-            merged_entries+="$entry\n"
+            merged_entries+=("$entry")
           done
 
           if [ "$merged_any" = "true" ]; then
-            merged_json=$(printf '%s' "$merged_entries" | jq -s '.')
+            merged_json=$(printf '%s\n' "${merged_entries[@]}" | jq -s '.')
           else
             merged_json='[]'
           fi
