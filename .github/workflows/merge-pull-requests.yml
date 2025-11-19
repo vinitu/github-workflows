@@ -37,6 +37,7 @@ jobs:
           TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
           EVENT_NAME: ${{ github.event_name }}
           BASE_REPO: ${{ github.repository }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -70,13 +71,13 @@ jobs:
               continue
             fi
 
-            state=$(gh pr view "$number" --json state --jq '.state')
+            state=$(gh pr view "$number" -R "$REPO" --json state --jq '.state')
             if [ "$state" != "OPEN" ]; then
               echo "PR #$number is $state; nothing to merge."
               continue
             fi
 
-            pr_meta=$(gh pr view "$number" --json title,author --jq '.title + "::" + (.author.login // "")' 2>/dev/null || echo "")
+            pr_meta=$(gh pr view "$number" -R "$REPO" --json title,author --jq '.title + "::" + (.author.login // "")' 2>/dev/null || echo "")
             title="${pr_meta%%::*}"
             author="${pr_meta##*::}"
             if [ -z "$title" ] || [ "$title" = "null" ]; then
@@ -87,12 +88,11 @@ jobs:
             fi
 
             echo "Merging PR #$number..."
-            gh pr merge "$number" --merge --delete-branch --body "Merged automatically after successful CI."
+            gh pr merge "$number" -R "$REPO" --merge --delete-branch --body "Merged automatically after successful CI."
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
-            merged_entries+="$entry
-"
+            merged_entries+="$entry\n"
           done
 
           if [ "$merged_any" = "true" ]; then
