@@ -35,6 +35,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
           TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -42,7 +44,12 @@ jobs:
           merged_any="false"
           merged_entries=""
 
-          PRS=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+          event_name="${EVENT_NAME:-workflow_run}"
+          if [ "$event_name" = "pull_request" ]; then
+            PRS=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref, repo:{full_name:.pull_request.head.repo.full_name}}}' "$GITHUB_EVENT_PATH")
+          else
+            PRS=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+          fi
           if [ -z "$PRS" ]; then
             echo "No pull requests associated with this workflow run."
           fi
@@ -51,9 +58,15 @@ jobs:
             number=$(jq -r '.number' <<<"$pr")
             base=$(jq -r '.base.ref' <<<"$pr")
             head=$(jq -r '.head.ref' <<<"$pr")
+            head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr")
 
             if [ "$base" != "$target_branch" ]; then
               echo "Skipping PR #$number because base branch is $base (target $target_branch)."
+              continue
+            fi
+
+            if [ -n "$head_repo" ] && [ "$head_repo" != "$BASE_REPO" ]; then
+              echo "Skipping PR #$number because it originates from fork $head_repo."
               continue
             fi
 

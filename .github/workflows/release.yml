@@ -1,0 +1,48 @@
+name: Release Shared Workflows
+
+on:
+  workflow_run:
+    workflows: ["Auto Merge PRs"]
+    types:
+      - completed
+
+jobs:
+  determine-version:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    uses: ./determine-version-bump.yml
+    with:
+      target-branch: main
+      major-branch-prefixes: |
+        major/
+      minor-branch-prefixes: |
+        feature/
+        features/
+      patch-branch-prefixes: |
+        fix/
+        fixes/
+      default: patch
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-tag:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.determine-version.outputs.matching_pr == 'true' }}
+    needs: determine-version
+    uses: ./create-tag.yml
+    with:
+      target-branch: main
+      version-bump: ${{ needs.determine-version.outputs.version-bump }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.determine-version.outputs.matching_pr == 'true' }}
+    needs:
+      - determine-version
+      - create-tag
+    uses: ./create-release.yml
+    with:
+      tag-name: ${{ needs.create-tag.outputs.new-tag }}
+      previous-tag: ${{ needs.create-tag.outputs.previous-tag }}
+      merged-prs: '[]'
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
