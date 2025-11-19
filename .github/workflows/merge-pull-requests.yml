@@ -103,7 +103,7 @@ jobs:
 
           {
             echo "merged=$merged_any"
-            echo "merged_prs<<'EOF'"
+            echo "merged_prs<<EOF"
             printf '%s\n' "$merged_json"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
