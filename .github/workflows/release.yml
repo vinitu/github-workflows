@@ -29,7 +29,7 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   create-tag:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.determine-version.outputs.matching_pr == 'true' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     needs: determine-version
     uses: ./.github/workflows/create-tag.yml
     with:
@@ -39,7 +39,7 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   create-release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && needs.determine-version.outputs.matching_pr == 'true' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     needs:
       - determine-version
       - create-tag
