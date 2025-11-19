@@ -37,9 +37,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag="$TAG_NAME"
-          previous_tag="$PREVIOUS_TAG"
-          merged_json="$MERGED_PRS"
+          tag="${TAG_NAME:-}"
+          previous_tag="${PREVIOUS_TAG:-}"
+          merged_json="${MERGED_PRS:-}"
           if [ -z "$merged_json" ]; then
             merged_json='[]'
           fi
