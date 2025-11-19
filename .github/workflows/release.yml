@@ -9,7 +9,7 @@ on:
 jobs:
   determine-version:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    uses: ./determine-version-bump.yml
+    uses: ./.github/workflows/determine-version-bump.yml
     with:
       target-branch: main
       major-branch-prefixes: |
@@ -27,7 +27,7 @@ jobs:
   create-tag:
     if: ${{ github.event.workflow_run.conclusion == 'success' && needs.determine-version.outputs.matching_pr == 'true' }}
     needs: determine-version
-    uses: ./create-tag.yml
+    uses: ./.github/workflows/create-tag.yml
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
@@ -39,7 +39,7 @@ jobs:
     needs:
       - determine-version
       - create-tag
-    uses: ./create-release.yml
+    uses: ./.github/workflows/create-release.yml
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}

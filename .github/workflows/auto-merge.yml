@@ -26,7 +26,7 @@ jobs:
 
   merge:
     needs: tests
-    uses: ./merge-pull-requests.yml
+    uses: ./.github/workflows/merge-pull-requests.yml
     permissions:
       contents: write
       pull-requests: write
