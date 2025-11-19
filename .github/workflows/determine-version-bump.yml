@@ -1,0 +1,134 @@
+name: Determine Version Bump
+
+on:
+  workflow_call:
+    inputs:
+      target-branch:
+        description: "Only consider pull requests targeting this branch."
+        required: false
+        default: main
+        type: string
+      major-branch-prefixes:
+        description: "Comma or newline separated branch prefixes that should trigger a major bump."
+        required: false
+        default: ""
+        type: string
+      minor-branch-prefixes:
+        description: "Comma or newline separated branch prefixes that should trigger a minor bump."
+        required: false
+        default: ""
+        type: string
+      patch-branch-prefixes:
+        description: "Comma or newline separated branch prefixes that should trigger a patch bump."
+        required: false
+        default: ""
+        type: string
+      default:
+        description: "Fallback bump when no labels/prefix rules apply (major/minor/patch)."
+        required: false
+        default: patch
+        type: string
+    secrets:
+      gh_token:
+        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        required: false
+    outputs:
+      version-bump:
+        description: "Detected version segment to bump (major/minor/patch)."
+        value: ${{ jobs.determine-version.outputs.version-bump }}
+      matching_pr:
+        description: "Indicates whether a pull request targeting the configured branch was found."
+        value: ${{ jobs.determine-version.outputs.matching_pr }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  determine-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version-bump: ${{ steps.detect.outputs.version_bump }}
+      matching_pr: ${{ steps.detect.outputs.matching_pr }}
+    steps:
+      - name: Detect version bump type
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
+          MAJOR_BRANCH_PREFIXES: ${{ inputs.major-branch-prefixes }}
+          MINOR_BRANCH_PREFIXES: ${{ inputs.minor-branch-prefixes }}
+          PATCH_BRANCH_PREFIXES: ${{ inputs.patch-branch-prefixes }}
+          DEFAULT_BUMP_INPUT: ${{ inputs.default }}
+        run: |
+          set -euo pipefail
+
+          normalize_bump() {
+            case "$1" in
+              major|minor|patch) echo "$1" ;;
+              *) echo "patch" ;;
+            esac
+          }
+
+          normalize_list() {
+            tr ',' '\n' <<<"$1" | sed 's/^\s*//;s/\s*$//' | sed '/^$/d'
+          }
+
+          matches_prefix() {
+            local prefixes="$1"
+            local branch="$2"
+            while IFS= read -r prefix; do
+              if [[ -n "$prefix" && "$branch" == "$prefix"* ]]; then
+                return 0
+              fi
+            done <<<"$prefixes"
+            return 1
+          }
+
+          default_bump=$(normalize_bump "${DEFAULT_BUMP_INPUT:-patch}")
+          bump="$default_bump"
+          target_branch="${TARGET_BRANCH_INPUT:-main}"
+          matching_pr="false"
+          prs=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+
+          if [ -z "$prs" ]; then
+            echo "No pull requests associated with this workflow run. Defaulting to $bump bump."
+            echo "version_bump=$bump" >> "$GITHUB_OUTPUT"
+            echo "matching_pr=$matching_pr" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          major_prefixes=$(normalize_list "${MAJOR_BRANCH_PREFIXES:-}")
+          minor_prefixes=$(normalize_list "${MINOR_BRANCH_PREFIXES:-}")
+          patch_prefixes=$(normalize_list "${PATCH_BRANCH_PREFIXES:-}")
+
+          for pr in $prs; do
+            number=$(jq -r '.number' <<<"$pr")
+            head=$(jq -r '.head.ref' <<<"$pr")
+            base=$(jq -r '.base.ref' <<<"$pr")
+
+            if [ "$base" != "$target_branch" ]; then
+              echo "Skipping PR #$number because base branch is $base (target $target_branch)."
+              continue
+            fi
+
+            matching_pr="true"
+
+            if matches_prefix "$major_prefixes" "$head"; then
+              bump="major"
+              break
+            fi
+
+            if [ "$bump" != "major" ] && matches_prefix "$minor_prefixes" "$head"; then
+              bump="minor"
+              continue
+            fi
+
+            if [ "$bump" != "major" ] && [ "$bump" != "minor" ] && matches_prefix "$patch_prefixes" "$head"; then
+              bump="patch"
+            fi
+          done
+
+          echo "Selected version bump: $bump"
+          echo "version_bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "matching_pr=$matching_pr" >> "$GITHUB_OUTPUT"

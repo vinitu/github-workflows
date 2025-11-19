@@ -1,0 +1,66 @@
+name: Create Release
+
+on:
+  workflow_call:
+    inputs:
+      tag-name:
+        description: "Tag name to publish."
+        required: true
+        type: string
+      previous-tag:
+        description: "Previous tag used for changelog links."
+        required: false
+        default: v0.0.0
+        type: string
+      merged-prs:
+        description: "JSON array with merged pull request metadata."
+        required: false
+        default: "[]"
+        type: string
+    secrets:
+      gh_token:
+        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        required: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.tag-name }}
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
+          MERGED_PRS: ${{ inputs.merged-prs }}
+        run: |
+          set -euo pipefail
+
+          tag="$TAG_NAME"
+          previous_tag="$PREVIOUS_TAG"
+          merged_json="$MERGED_PRS"
+          if [ -z "$merged_json" ]; then
+            merged_json='[]'
+          fi
+
+          notes="## What's Changed\n"
+          changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
+            if length == 0 then "" else
+              map("- " + (.title // ("Pull request #" + .number)) + " by @" + ((.author // "bot")) +
+                  " in [#" + .number + "](https://github.com/" + $repo + "/pull/" + .number + ")")
+              | .[]
+            end' <<<"$merged_json" || true)
+
+          if [ -n "$changes" ]; then
+            notes+="$changes\n"
+          else
+            notes+="- No pull requests were merged in this release.\n"
+          fi
+
+          if [ -n "$previous_tag" ]; then
+            notes+="\n**Full Changelog:** [${previous_tag}...${tag}](https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag})\n"
+          fi
+
+          echo "Creating release for $tag"
+          gh release create "$tag" --title "$tag" --notes "$notes"

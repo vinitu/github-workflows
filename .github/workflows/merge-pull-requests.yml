@@ -1,0 +1,96 @@
+name: Merge Pull Requests
+
+on:
+  workflow_call:
+    inputs:
+      target-branch:
+        description: "Only merge pull requests targeting this branch."
+        required: false
+        default: main
+        type: string
+    secrets:
+      gh_token:
+        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        required: false
+    outputs:
+      merged:
+        description: "Whether at least one pull request targeting the branch was merged."
+        value: ${{ jobs.merge.outputs.merged }}
+      merged-prs:
+        description: "JSON array with merged pull request metadata (number/title/author/head)."
+        value: ${{ jobs.merge.outputs.merged-prs }}
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      merged: ${{ steps.merge.outputs.merged }}
+      merged-prs: ${{ steps.merge.outputs.merged_prs }}
+    steps:
+      - name: Merge pull requests targeting branch
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
+        run: |
+          set -euo pipefail
+
+          target_branch="${TARGET_BRANCH_INPUT:-main}"
+          merged_any="false"
+          merged_entries=""
+
+          PRS=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+          if [ -z "$PRS" ]; then
+            echo "No pull requests associated with this workflow run."
+          fi
+
+          for pr in $PRS; do
+            number=$(jq -r '.number' <<<"$pr")
+            base=$(jq -r '.base.ref' <<<"$pr")
+            head=$(jq -r '.head.ref' <<<"$pr")
+
+            if [ "$base" != "$target_branch" ]; then
+              echo "Skipping PR #$number because base branch is $base (target $target_branch)."
+              continue
+            fi
+
+            state=$(gh pr view "$number" --json state --jq '.state')
+            if [ "$state" != "OPEN" ]; then
+              echo "PR #$number is $state; nothing to merge."
+              continue
+            fi
+
+            pr_meta=$(gh pr view "$number" --json title,author --jq '.title + "::" + (.author.login // "")' 2>/dev/null || echo "")
+            title="${pr_meta%%::*}"
+            author="${pr_meta##*::}"
+            if [ -z "$title" ] || [ "$title" = "null" ]; then
+              title="Pull request #${number}"
+            fi
+            if [ -z "$author" ] || [ "$author" = "null" ]; then
+              author="${GITHUB_ACTOR:-bot}"
+            fi
+
+            echo "Merging PR #$number..."
+            gh pr merge "$number" --merge --delete-branch --body "Merged automatically after successful CI."
+
+            merged_any="true"
+            entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
+            merged_entries+="$entry
+"
+          done
+
+          if [ "$merged_any" = "true" ]; then
+            merged_json=$(printf '%s' "$merged_entries" | jq -s '.')
+          else
+            merged_json='[]'
+          fi
+
+          {
+            echo "merged=$merged_any"
+            echo "merged_prs<<'EOF'"
+            printf '%s\n' "$merged_json"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
