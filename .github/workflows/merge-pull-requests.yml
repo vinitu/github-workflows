@@ -91,8 +91,7 @@ jobs:
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
-            merged_entries+="$entry
-"
+            merged_entries+="$entry\n"
           done
 
           if [ "$merged_any" = "true" ]; then
