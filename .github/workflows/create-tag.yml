@@ -95,7 +95,17 @@ jobs:
           git tag -a "$new_tag" -m "Automated $version_bump release"
           git push origin "$new_tag"
 
+          echo "::notice title=Tag created::${new_tag} (from ${previous_tag})"
+
           {
             echo "new_tag=$new_tag"
             echo "previous_tag=$previous_tag"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Tag summary
+        run: |
+          {
+            echo "### Tag"
+            echo "- New tag: ${{ steps.create.outputs.new_tag }}"
+            echo "- Previous tag: ${{ steps.create.outputs.previous_tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"

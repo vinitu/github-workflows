@@ -63,4 +63,14 @@ jobs:
           fi
 
           echo "Creating release for $tag"
-          gh release create "$tag" --title "$tag" --notes "$notes"
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "$notes"
+
+          echo "::notice title=Release created::${tag} (previous ${previous_tag})"
+
+      - name: Release summary
+        run: |
+          {
+            echo "### Release"
+            echo "- Tag: ${{ inputs.tag-name }}"
+            echo "- Previous tag: ${{ inputs.previous-tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"
