@@ -1,4 +1,4 @@
-name: Release Shared Workflows
+name: Release
 
 on:
   workflow_run:

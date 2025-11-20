@@ -2,19 +2,27 @@
 
 Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.github/workflows/<workflow>.yml@<tag>`. After every merge to `main` this repo auto-tags and publishes a release, so always depend on a version tag, not `@main`.
 
-## Available workflows
+## Workflows in this repo
+
+### Repo-local (used only here)
+- `.github/workflows/auto-merge.yml` — PR CI for this repo: runs `actionlint` on PRs to `main` and auto-merges same-repo PRs after the check passes.
+- `.github/workflows/release.yml` — release pipeline for this repo, triggered after successful `Auto Merge PRs`; determines the version bump, creates a tag, and publishes a GitHub Release.
+
+### Reusable (shared) workflows
 - `.github/workflows/determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`.
 - `.github/workflows/merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata.
 - `.github/workflows/create-tag.yml` — bumps the version and creates/pushes a git tag.
 - `.github/workflows/create-release.yml` — creates a GitHub Release for the given tag.
 
-## Example usage
+## Example usage (in a caller repo)
 ```yaml
 jobs:
   determine-version:
     uses: vinitu/github-workflows/.github/workflows/determine-version-bump.yml@vX.Y.Z
     with:
       target-branch: main
+      major-branch-prefixes: |
+        major/
       minor-branch-prefixes: |
         feature/
         features/
