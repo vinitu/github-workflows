@@ -60,6 +60,8 @@ jobs:
           MINOR_BRANCH_PREFIXES: ${{ inputs.minor-branch-prefixes }}
           PATCH_BRANCH_PREFIXES: ${{ inputs.patch-branch-prefixes }}
           DEFAULT_BUMP_INPUT: ${{ inputs.default }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -89,7 +91,24 @@ jobs:
           bump="$default_bump"
           target_branch="${TARGET_BRANCH_INPUT:-main}"
           matching_pr="false"
-          prs=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+          event_name="${EVENT_NAME:-workflow_run}"
+          repo="${GITHUB_REPOSITORY:-}"
+          commit_sha="${COMMIT_SHA:-}"
+          prs=""
+
+          case "$event_name" in
+            workflow_run)
+              prs=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+              ;;
+            pull_request)
+              prs=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref}}' "$GITHUB_EVENT_PATH")
+              ;;
+            push)
+              if [ -n "$repo" ] && [ -n "$commit_sha" ]; then
+                prs=$(gh api "repos/${repo}/commits/${commit_sha}/pulls" --jq '.[] | {number:.number, base:{ref:.base.ref}, head:{ref:.head.ref}}' 2>/dev/null || true)
+              fi
+              ;;
+          esac
 
           if [ -z "$prs" ]; then
             echo "No pull requests associated with this workflow run. Defaulting to $bump bump."
