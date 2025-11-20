@@ -8,6 +8,11 @@ on:
         required: false
         default: main
         type: string
+      merge-method:
+        description: "Merge strategy to use (merge/squash/rebase)."
+        required: false
+        default: merge
+        type: string
       pull-requests:
         description: "PR payload (object or array) to use when event is workflow_call."
         required: false
@@ -40,6 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
           TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
+          MERGE_METHOD_INPUT: ${{ inputs.merge-method }}
           EVENT_NAME: ${{ github.event_name }}
           BASE_REPO: ${{ github.repository }}
           REPO: ${{ github.repository }}
@@ -48,6 +54,16 @@ jobs:
           set -euo pipefail
 
           target_branch="${TARGET_BRANCH_INPUT:-main}"
+          merge_method="${MERGE_METHOD_INPUT:-merge}"
+          case "$merge_method" in
+            squash|rebase|merge) ;;
+            *) merge_method="merge" ;;
+          esac
+          case "$merge_method" in
+            squash) merge_flag="--squash" ;;
+            rebase) merge_flag="--rebase" ;;
+            *) merge_flag="--merge" ;;
+          esac
           merged_any="false"
           merged_entries=()
 
@@ -102,8 +118,8 @@ jobs:
               author="${GITHUB_ACTOR:-bot}"
             fi
 
-            echo "Merging PR #$number..."
-            gh pr merge "$number" -R "$REPO" --merge --delete-branch --body "Merged automatically after successful CI."
+            echo "Merging PR #$number with method $merge_method..."
+            gh pr merge "$number" -R "$REPO" "$merge_flag" --delete-branch --body "Merged automatically after successful CI."
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
