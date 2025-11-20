@@ -1,10 +1,9 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["Auto Merge PRs"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -12,7 +11,6 @@ permissions:
 
 jobs:
   determine-version:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/determine-version-bump.yml
     with:
       target-branch: main
@@ -29,7 +27,6 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   create-tag:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     needs: determine-version
     uses: ./.github/workflows/create-tag.yml
     with:
@@ -39,7 +36,6 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   create-release:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     needs:
       - determine-version
       - create-tag

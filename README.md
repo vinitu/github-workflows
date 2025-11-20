@@ -6,7 +6,7 @@ Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.
 
 ### Repo-local (used only here)
 - `.github/workflows/auto-merge.yml` — PR CI for this repo: runs `actionlint` on PRs to `main` and auto-merges same-repo PRs after the check passes.
-- `.github/workflows/release.yml` — release pipeline for this repo, triggered after successful `Auto Merge PRs`; determines the version bump, creates a tag, and publishes a GitHub Release.
+- `.github/workflows/release.yml` — release pipeline for this repo, triggered on pushes to `main`; determines the version bump, creates a tag, and publishes a GitHub Release.
 
 ### Reusable (shared) workflows
 - `.github/workflows/determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`.
