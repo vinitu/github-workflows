@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   determine-version:
-    uses: ./.github/workflows/determine-version-bump.yml
+    uses: ./.github/workflows/workflow-determine-version-bump.yml
     with:
       target-branch: main
       major-branch-prefixes: |
@@ -29,7 +29,7 @@ jobs:
 
   create-tag:
     needs: determine-version
-    uses: ./.github/workflows/create-tag.yml
+    uses: ./.github/workflows/workflow-create-tag.yml
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
@@ -40,7 +40,7 @@ jobs:
     needs:
       - determine-version
       - create-tag
-    uses: ./.github/workflows/create-release.yml
+    uses: ./.github/workflows/workflow-create-release.yml
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}

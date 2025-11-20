@@ -9,16 +9,16 @@ Reusable workflows to plug into other repos via `uses: vinitu-net/github-workflo
 - `.github/workflows/release.yml` — release pipeline for this repo, triggered after the `Auto Merge PRs` workflow completes successfully. It determines the version bump, creates a tag, and publishes a GitHub Release.
 
 ### Reusable (shared) workflows
-- `.github/workflows/determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`.
-- `.github/workflows/merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`. You can set `merge-method` to `merge` (default), `squash`, or `rebase`.
-- `.github/workflows/create-tag.yml` — bumps the version and creates/pushes a git tag.
-- `.github/workflows/create-release.yml` — creates a GitHub Release for the given tag.
+- `.github/workflows/workflow-determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`.
+- `.github/workflows/workflow-merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`. You can set `merge-method` to `merge` (default), `squash`, or `rebase`.
+- `.github/workflows/workflow-create-tag.yml` — bumps the version and creates/pushes a git tag.
+- `.github/workflows/workflow-create-release.yml` — creates a GitHub Release for the given tag.
 
 ## Example usage (in a caller repo)
 ```yaml
 jobs:
   determine-version:
-    uses: vinitu-net/github-workflows/.github/workflows/determine-version-bump.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-determine-version-bump.yml@vX.Y.Z
     with:
       target-branch: main
       major-branch-prefixes: |
@@ -34,7 +34,7 @@ jobs:
 
   merge:
     needs: determine-version
-    uses: vinitu-net/github-workflows/.github/workflows/merge-pull-requests.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-merge-pull-requests.yml@vX.Y.Z
     with:
       target-branch: main
     secrets:
@@ -43,7 +43,7 @@ jobs:
   create-tag:
     needs: [determine-version, merge]
     if: ${{ needs.merge.outputs.merged == 'true' }}
-    uses: vinitu-net/github-workflows/.github/workflows/create-tag.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-create-tag.yml@vX.Y.Z
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
@@ -53,7 +53,7 @@ jobs:
   create-release:
     needs: [merge, create-tag]
     if: ${{ needs.merge.outputs.merged == 'true' }}
-    uses: vinitu-net/github-workflows/.github/workflows/create-release.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-create-release.yml@vX.Y.Z
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}
