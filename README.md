@@ -10,7 +10,7 @@ Reusable workflows to plug into other repos via `uses: vinitu-net/github-workflo
 
 ### Reusable (shared) workflows
 - `.github/workflows/workflow-determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`.
-- `.github/workflows/workflow-merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks and WIP branches), returns JSON with merged PR metadata. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`. You can set `merge-method` to `merge` (default), `squash`, or `rebase`.
+- `.github/workflows/workflow-merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`. You can set `merge-method` to `merge` (default), `squash`, or `rebase`.
 - `.github/workflows/workflow-create-tag.yml` — bumps the version and creates/pushes a git tag.
 - `.github/workflows/workflow-create-release.yml` — creates a GitHub Release for the given tag.
 

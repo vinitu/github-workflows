@@ -91,7 +91,6 @@ jobs:
             base=$(jq -r '.base.ref' <<<"$pr")
             head=$(jq -r '.head.ref' <<<"$pr")
             head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr")
-            head_lower="${head,,}"
 
             if [ "$base" != "$target_branch" ]; then
               echo "Skipping PR #$number because base branch is $base (target $target_branch)."
@@ -106,11 +105,6 @@ jobs:
             state=$(gh pr view "$number" -R "$REPO" --json state --jq '.state')
             if [ "$state" != "OPEN" ]; then
               echo "PR #$number is $state; nothing to merge."
-              continue
-            fi
-
-            if [[ "$head_lower" == wip* || "$head_lower" == */wip* ]]; then
-              echo "Skipping PR #$number because head branch is marked WIP ($head)."
               continue
             fi
 
