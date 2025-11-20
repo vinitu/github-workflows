@@ -8,6 +8,11 @@ on:
         required: false
         default: main
         type: string
+      pull-requests:
+        description: "PR payload (object or array) to use when event is workflow_call."
+        required: false
+        default: ""
+        type: string
     secrets:
       gh_token:
         description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
@@ -38,6 +43,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REPO: ${{ github.repository }}
           REPO: ${{ github.repository }}
+          PULL_REQUESTS_INPUT: ${{ inputs.pull-requests }}
         run: |
           set -euo pipefail
 
@@ -46,10 +52,19 @@ jobs:
           merged_entries=()
 
           event_name="${EVENT_NAME:-workflow_run}"
-          if [ "$event_name" = "pull_request" ]; then
-            PRS=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref, repo:{full_name:.pull_request.head.repo.full_name}}}' "$GITHUB_EVENT_PATH")
-          else
-            PRS=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+          prs_input="${PULL_REQUESTS_INPUT:-}"
+          PRS=""
+
+          if [ -n "$prs_input" ]; then
+            PRS=$(jq -c 'if type=="array" then .[] else . end' <<<"$prs_input" 2>/dev/null || true)
+          fi
+
+          if [ -z "$PRS" ]; then
+            if [ "$event_name" = "pull_request" ]; then
+              PRS=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref, repo:{full_name:.pull_request.head.repo.full_name}}}' "$GITHUB_EVENT_PATH")
+            else
+              PRS=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+            fi
           fi
           if [ -z "$PRS" ]; then
             echo "No pull requests associated with this workflow run."
