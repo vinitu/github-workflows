@@ -36,6 +36,8 @@ jobs:
           MERGED_PRS: ${{ inputs.merged-prs }}
         run: |
           set -euo pipefail
+          tmp_notes="$(mktemp)"
+          trap 'rm -f "$tmp_notes"' EXIT
 
           tag="${TAG_NAME:-}"
           previous_tag="${PREVIOUS_TAG:-}"
@@ -66,7 +68,6 @@ jobs:
             fi
           fi
 
-          notes=$'## What'\''s Changed\n'
           changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
             if length == 0 then "" else
               map("- " + (.title // ("Pull request #" + .number)) + " by @" + ((.author // "bot")) +
@@ -74,18 +75,21 @@ jobs:
               | .[]
             end' <<<"$merged_json" || true)
 
-          if [ -n "$changes" ]; then
-            notes+="${changes}"$'\n'
-          else
-            notes+=$'- No pull requests were merged in this release.\n'
-          fi
-
-          if [ -n "$previous_tag" ]; then
-            notes+=$'\n'"**Full Changelog:** [${previous_tag}...${tag}](https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag})"$'\n'
-          fi
+          {
+            echo "## What's Changed"
+            if [ -n "$changes" ]; then
+              printf "%s\n" "$changes"
+            else
+              echo "- No pull requests were merged in this release."
+            fi
+            if [ -n "$previous_tag" ]; then
+              echo
+              echo "**Full Changelog:** [${previous_tag}...${tag}](https://github.com/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag})"
+            fi
+          } >"$tmp_notes"
 
           echo "Creating release for $tag"
-          gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes "$notes"
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --title "$tag" --notes-file "$tmp_notes"
 
           echo "::notice title=Release created::${tag} (previous ${previous_tag})"
 
