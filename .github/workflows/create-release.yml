@@ -44,6 +44,28 @@ jobs:
             merged_json='[]'
           fi
 
+          if [ "$merged_json" = "[]" ]; then
+            echo "No merged PRs provided; collecting merged PRs between ${previous_tag}...${tag}"
+            if [ -n "$previous_tag" ]; then
+              commit_messages=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag}" --jq '.commits[].commit.message' 2>/dev/null || true)
+              pr_numbers=$(grep -oE '#[0-9]+' <<<"$commit_messages" | tr -d '#' | sort -u)
+              merged_entries=()
+              for pr_number in $pr_numbers; do
+                pr_json=$(gh pr view "$pr_number" -R "$GITHUB_REPOSITORY" --json number,title,author --jq '{number:.number,title:.title,author:(.author.login // "bot")}' 2>/dev/null || true)
+                if [ -n "$pr_json" ]; then
+                  merged_entries+=("$pr_json")
+                fi
+              done
+              if [ "${#merged_entries[@]:-0}" -gt 0 ]; then
+                merged_json=$(printf '%s\n' "${merged_entries[@]}" | jq -s 'unique_by(.number)')
+              else
+                merged_json='[]'
+              fi
+            else
+              echo "No previous tag provided; skipping automatic PR collection."
+            fi
+          fi
+
           notes="## What's Changed\n"
           changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
             if length == 0 then "" else
