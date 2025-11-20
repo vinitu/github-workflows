@@ -49,15 +49,29 @@ jobs:
           if [ "$merged_json" = "[]" ]; then
             echo "No merged PRs provided; collecting merged PRs between ${previous_tag}...${tag}"
             if [ -n "$previous_tag" ]; then
+              merged_entries=()
               commit_messages=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag}" --jq '.commits[].commit.message' 2>/dev/null || true)
               pr_numbers=$(grep -oE '#[0-9]+' <<<"$commit_messages" | tr -d '#' | sort -u)
-              merged_entries=()
               for pr_number in $pr_numbers; do
                 pr_json=$(gh pr view "$pr_number" -R "$GITHUB_REPOSITORY" --json number,title,author --jq '{number:.number,title:.title,author:(.author.login // "bot")}' 2>/dev/null || true)
                 if [ -n "$pr_json" ]; then
                   merged_entries+=("$pr_json")
                 fi
               done
+
+              # Fallback: check PRs associated with commits if no PRs were found via messages
+              if [ "${#merged_entries[@]}" -eq 0 ]; then
+                commit_shas=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${previous_tag}...${tag}" --jq '.commits[].sha' 2>/dev/null || true)
+                for sha in $commit_shas; do
+                  pr_json_list=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" --jq '.[] | {number:.number,title:.title,author:(.user.login // "bot")}' 2>/dev/null || true)
+                  if [ -n "$pr_json_list" ]; then
+                    while IFS= read -r pr_line; do
+                      merged_entries+=("$pr_line")
+                    done <<<"$pr_json_list"
+                  fi
+                done
+              fi
+
               if [ "${#merged_entries[@]}" -gt 0 ]; then
                 merged_json=$(printf '%s\n' "${merged_entries[@]}" | jq -s 'unique_by(.number)')
               else
@@ -66,6 +80,10 @@ jobs:
             else
               echo "No previous tag provided; skipping automatic PR collection."
             fi
+          fi
+
+          if [ "$merged_json" = "[]" ]; then
+            echo "No merged PRs identified between ${previous_tag}...${tag}"
           fi
 
           changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
