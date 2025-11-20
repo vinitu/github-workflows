@@ -1,6 +1,6 @@
 # Shared GitHub Workflows
 
-Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.github/workflows/<workflow>.yml@<tag>`. After every merge to `main` this repo auto-tags and publishes a release, so always depend on a version tag, not `@main`.
+Reusable workflows to plug into other repos via `uses: vinitu-net/github-workflows/.github/workflows/<workflow>.yml@<tag>`. After every merge to `main` this repo auto-tags and publishes a release, so always depend on a version tag, not `@main`.
 
 ## Workflows in this repo
 
@@ -18,7 +18,7 @@ Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.
 ```yaml
 jobs:
   determine-version:
-    uses: vinitu/github-workflows/.github/workflows/determine-version-bump.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/determine-version-bump.yml@vX.Y.Z
     with:
       target-branch: main
       major-branch-prefixes: |
@@ -34,7 +34,7 @@ jobs:
 
   merge:
     needs: determine-version
-    uses: vinitu/github-workflows/.github/workflows/merge-pull-requests.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/merge-pull-requests.yml@vX.Y.Z
     with:
       target-branch: main
     secrets:
@@ -43,7 +43,7 @@ jobs:
   create-tag:
     needs: [determine-version, merge]
     if: ${{ needs.merge.outputs.merged == 'true' }}
-    uses: vinitu/github-workflows/.github/workflows/create-tag.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/create-tag.yml@vX.Y.Z
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
@@ -53,7 +53,7 @@ jobs:
   create-release:
     needs: [merge, create-tag]
     if: ${{ needs.merge.outputs.merged == 'true' }}
-    uses: vinitu/github-workflows/.github/workflows/create-release.yml@vX.Y.Z
+    uses: vinitu-net/github-workflows/.github/workflows/create-release.yml@vX.Y.Z
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}
