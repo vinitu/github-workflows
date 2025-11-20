@@ -70,7 +70,7 @@ jobs:
             echo "No pull requests associated with this workflow run."
           fi
 
-          for pr in $PRS; do
+          while IFS= read -r pr; do
             number=$(jq -r '.number' <<<"$pr")
             base=$(jq -r '.base.ref' <<<"$pr")
             head=$(jq -r '.head.ref' <<<"$pr")
@@ -108,7 +108,7 @@ jobs:
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
             merged_entries+=("$entry")
-          done
+          done <<<"$PRS"
 
           if [ "$merged_any" = "true" ]; then
             merged_json=$(printf '%s\n' "${merged_entries[@]}" | jq -s '.')

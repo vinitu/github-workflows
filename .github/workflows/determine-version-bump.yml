@@ -134,7 +134,7 @@ jobs:
           minor_prefixes=$(normalize_list "${MINOR_BRANCH_PREFIXES:-}")
           patch_prefixes=$(normalize_list "${PATCH_BRANCH_PREFIXES:-}")
 
-          for pr in $prs; do
+          while IFS= read -r pr; do
             number=$(jq -r '.number' <<<"$pr")
             head=$(jq -r '.head.ref' <<<"$pr")
             base=$(jq -r '.base.ref' <<<"$pr")
@@ -159,7 +159,7 @@ jobs:
             if [ "$bump" != "major" ] && [ "$bump" != "minor" ] && matches_prefix "$patch_prefixes" "$head"; then
               bump="patch"
             fi
-          done
+          done <<<"$prs"
 
           echo "Selected version bump: $bump"
           echo "version_bump=$bump" >> "$GITHUB_OUTPUT"
