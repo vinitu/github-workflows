@@ -28,6 +28,11 @@ on:
         required: false
         default: patch
         type: string
+      pull-requests:
+        description: "PR payload (object or array) to use when event is workflow_call."
+        required: false
+        default: ""
+        type: string
     secrets:
       gh_token:
         description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
@@ -62,6 +67,7 @@ jobs:
           DEFAULT_BUMP_INPUT: ${{ inputs.default }}
           EVENT_NAME: ${{ github.event_name }}
           COMMIT_SHA: ${{ github.sha }}
+          PULL_REQUESTS_INPUT: ${{ inputs.pull-requests }}
         run: |
           set -euo pipefail
 
@@ -95,20 +101,27 @@ jobs:
           repo="${GITHUB_REPOSITORY:-}"
           commit_sha="${COMMIT_SHA:-}"
           prs=""
+          prs_input="${PULL_REQUESTS_INPUT:-}"
 
-          case "$event_name" in
-            workflow_run)
-              prs=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
-              ;;
-            pull_request)
-              prs=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref}}' "$GITHUB_EVENT_PATH")
-              ;;
-            push)
-              if [ -n "$repo" ] && [ -n "$commit_sha" ]; then
-                prs=$(gh api "repos/${repo}/commits/${commit_sha}/pulls" --jq '.[] | {number:.number, base:{ref:.base.ref}, head:{ref:.head.ref}}' 2>/dev/null || true)
-              fi
-              ;;
-          esac
+          if [ -n "$prs_input" ]; then
+            prs=$(jq -c 'if type=="array" then .[] else . end' <<<"$prs_input" 2>/dev/null || true)
+          fi
+
+          if [ -z "$prs" ]; then
+            case "$event_name" in
+              workflow_run)
+                prs=$(jq -c '.workflow_run.pull_requests[]?' "$GITHUB_EVENT_PATH")
+                ;;
+              pull_request)
+                prs=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref}}' "$GITHUB_EVENT_PATH")
+                ;;
+              push)
+                if [ -n "$repo" ] && [ -n "$commit_sha" ]; then
+                  prs=$(gh api "repos/${repo}/commits/${commit_sha}/pulls" --jq '.[] | {number:.number, base:{ref:.base.ref}, head:{ref:.head.ref}}' 2>/dev/null || true)
+                fi
+                ;;
+            esac
+          fi
 
           if [ -z "$prs" ]; then
             echo "No pull requests associated with this workflow run. Defaulting to $bump bump."
@@ -121,7 +134,7 @@ jobs:
           minor_prefixes=$(normalize_list "${MINOR_BRANCH_PREFIXES:-}")
           patch_prefixes=$(normalize_list "${PATCH_BRANCH_PREFIXES:-}")
 
-          for pr in $prs; do
+          while IFS= read -r pr; do
             number=$(jq -r '.number' <<<"$pr")
             head=$(jq -r '.head.ref' <<<"$pr")
             base=$(jq -r '.base.ref' <<<"$pr")
@@ -146,7 +159,7 @@ jobs:
             if [ "$bump" != "major" ] && [ "$bump" != "minor" ] && matches_prefix "$patch_prefixes" "$head"; then
               bump="patch"
             fi
-          done
+          done <<<"$prs"
 
           echo "Selected version bump: $bump"
           echo "version_bump=$bump" >> "$GITHUB_OUTPUT"

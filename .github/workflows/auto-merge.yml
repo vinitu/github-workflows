@@ -32,5 +32,6 @@ jobs:
       pull-requests: write
     with:
       target-branch: main
+      pull-requests: ${{ toJson(github.event.pull_request) }}
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}

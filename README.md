@@ -9,8 +9,8 @@ Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.
 - `.github/workflows/release.yml` — release pipeline for this repo, triggered on pushes to `main`; determines the version bump, creates a tag, and publishes a GitHub Release.
 
 ### Reusable (shared) workflows
-- `.github/workflows/determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`.
-- `.github/workflows/merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata.
+- `.github/workflows/determine-version-bump.yml` — picks the semver bump based on branch prefixes (`major/`, `feature*/features*/`, `fix*/fixes*/`) and outputs `version-bump` plus `matching_pr`. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`.
+- `.github/workflows/merge-pull-requests.yml` — auto-merges PRs into a target branch (skips forks), returns JSON with merged PR metadata. When invoked via `workflow_call`, pass the triggering PR payload: `pull-requests: ${{ toJson(github.event.pull_request) }}`.
 - `.github/workflows/create-tag.yml` — bumps the version and creates/pushes a git tag.
 - `.github/workflows/create-release.yml` — creates a GitHub Release for the given tag.
 
@@ -63,5 +63,4 @@ jobs:
 ```
 
 Replace `vX.Y.Z` with the latest release tag from this repo.
-
 
