@@ -56,7 +56,7 @@ jobs:
                   merged_entries+=("$pr_json")
                 fi
               done
-              if [ "${#merged_entries[@]:-0}" -gt 0 ]; then
+              if [ "${#merged_entries[@]}" -gt 0 ]; then
                 merged_json=$(printf '%s\n' "${merged_entries[@]}" | jq -s 'unique_by(.number)')
               else
                 merged_json='[]'
