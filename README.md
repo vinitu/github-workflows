@@ -65,21 +65,46 @@ jobs:
 ```
 
 ### `workflow-create-tag.yml`
-Creates and pushes the next semver tag based on the provided bump.
+Creates and pushes the provided tag (no version calculation inside this workflow).
 
 **Inputs**
 - `target-branch` (default `main`): branch to check out before tagging.
-- `version-bump` (required): `major`, `minor`, or `patch`.
+- `next-tag` (required): tag to create (e.g., `v1.2.3`).
+- `previous-tag` (required): previous tag that `next-tag` is based on.
 
 **Outputs**
 - `new-tag`: tag that was created (e.g., `v1.2.3`).
-- `previous-tag`: latest existing tag before the bump.
+- `previous-tag`: previous tag that was passed in.
 
 **Example**
 ```yaml
 jobs:
   create-tag:
     uses: vinitu-net/github-workflows/.github/workflows/workflow-create-tag.yml@vX.Y.Z
+    with:
+      target-branch: main
+      next-tag: ${{ needs.calculate-tag.outputs.new-tag }}
+      previous-tag: ${{ needs.calculate-tag.outputs.previous-tag }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### `workflow-compute-next-tag.yml`
+Calculates the next semver tag from the provided bump and latest existing `v*` tag.
+
+**Inputs**
+- `target-branch` (default `main`): branch to check out before reading tags.
+- `version-bump` (required): `major`, `minor`, or `patch`.
+
+**Outputs**
+- `new-tag`: computed next tag (e.g., `v1.2.3`).
+- `previous-tag`: latest existing tag before the bump (or `v0.0.0` if none).
+
+**Example**
+```yaml
+jobs:
+  calculate-tag:
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-compute-next-tag.yml@vX.Y.Z
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
@@ -134,13 +159,24 @@ jobs:
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
-  create-tag:
+  calculate-tag:
     needs: [determine-version, merge]
+    if: ${{ needs.merge.outputs.merged == 'true' }}
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-compute-next-tag.yml@vX.Y.Z
+    with:
+      target-branch: main
+      version-bump: ${{ needs.determine-version.outputs.version-bump }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-tag:
+    needs: [determine-version, merge, calculate-tag]
     if: ${{ needs.merge.outputs.merged == 'true' }}
     uses: vinitu-net/github-workflows/.github/workflows/workflow-create-tag.yml@vX.Y.Z
     with:
       target-branch: main
-      version-bump: ${{ needs.determine-version.outputs.version-bump }}
+      next-tag: ${{ needs.calculate-tag.outputs.new-tag }}
+      previous-tag: ${{ needs.calculate-tag.outputs.previous-tag }}
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
