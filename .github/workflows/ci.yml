@@ -37,8 +37,6 @@ jobs:
 
   determine_version:
     name: Detect version bump
-    needs:
-      - lint
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
     uses: ./.github/workflows/workflow-determine-version-bump.yml
     with:
@@ -58,8 +56,10 @@ jobs:
 
   merge_prs:
     name: Auto-merge PRs
-    needs: determine_version
-    if: ${{ needs.determine_version.result == 'success' && needs.determine_version.outputs.matching_pr == 'true' }}
+    needs:
+      - lint
+      - determine_version
+    if: ${{ needs.determine_version.result == 'success' && needs.determine_version.outputs.matching_pr == 'true' && needs.lint.result == 'success' }}
     uses: ./.github/workflows/workflow-merge-pull-requests.yml
     permissions:
       contents: write
