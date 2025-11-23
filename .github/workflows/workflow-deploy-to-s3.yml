@@ -8,6 +8,11 @@ on:
         required: false
         default: master
         type: string
+      ref:
+        description: "Optional explicit git ref (commit SHA/tag/branch) to deploy; overrides target-branch when set."
+        required: false
+        default: ""
+        type: string
       bucket:
         description: "Destination S3 bucket name (without the s3:// prefix)."
         required: true
@@ -88,7 +93,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.target-branch }}
+          ref: ${{ inputs.ref != '' && inputs.ref || inputs.target-branch }}
           fetch-depth: 0
 
       - name: Configure AWS credentials

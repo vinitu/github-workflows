@@ -142,6 +142,7 @@ Syncs a directory to an S3 bucket with optional Cloudflare cache purge and SES n
 - `aws-region` (default `us-west-2`): region for S3/SES calls.
 - `delete-extra-files` (default `true`): remove objects not present locally.
 - `target-branch` (default `master`): branch to check out before syncing.
+- `ref` (optional): explicit git ref (commit SHA/tag/branch) to deploy; overrides `target-branch` when set.
 - `cloudflare-zone-id` (optional): zone to purge after deploy.
 - `purge-cloudflare` (default `true`): whether to purge the zone when credentials are provided.
 - `email-subject` (optional): SES email subject (defaults to the bucket name).
@@ -165,6 +166,7 @@ jobs:
     needs: tests
     uses: vinitu-net/github-workflows/.github/workflows/workflow-deploy-to-s3.yml@vX.Y.Z
     with:
+      ref: ${{ github.sha }}
       bucket: www.example.com
       source: public
       aws-region: us-west-2
