@@ -27,12 +27,24 @@ jobs:
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
-  create-tag:
+  calculate-tag:
     needs: determine-version
-    uses: ./.github/workflows/workflow-create-tag.yml
+    uses: ./.github/workflows/workflow-compute-next-tag.yml
     with:
       target-branch: main
       version-bump: ${{ needs.determine-version.outputs.version-bump }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create-tag:
+    needs:
+      - determine-version
+      - calculate-tag
+    uses: ./.github/workflows/workflow-create-tag.yml
+    with:
+      target-branch: main
+      next-tag: ${{ needs.calculate-tag.outputs.new-tag }}
+      previous-tag: ${{ needs.calculate-tag.outputs.previous-tag }}
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 

@@ -8,8 +8,12 @@ on:
         required: false
         default: main
         type: string
-      version-bump:
-        description: "Which part of the semver should be incremented (major/minor/patch)."
+      next-tag:
+        description: "Explicit tag to create (required)."
+        required: true
+        type: string
+      previous-tag:
+        description: "Previously released tag that the next tag is based on (required)."
         required: true
         type: string
     secrets:
@@ -42,7 +46,8 @@ jobs:
       - name: Create and push tag
         id: create
         env:
-          VERSION_BUMP_INPUT: ${{ inputs.version-bump }}
+          NEXT_TAG_INPUT: ${{ inputs.next-tag }}
+          PREVIOUS_TAG_INPUT: ${{ inputs.previous-tag }}
           TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
           GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
         run: |
@@ -51,48 +56,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          version_bump="${VERSION_BUMP_INPUT,,}"
-          case "$version_bump" in
-            major|minor|patch) ;;
-            *)
-              echo "Unsupported version bump '$version_bump'."
-              exit 1
-              ;;
-          esac
-
           git fetch origin "$TARGET_BRANCH_INPUT" --tags
           git checkout "$TARGET_BRANCH_INPUT"
           git pull origin "$TARGET_BRANCH_INPUT"
 
-          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -n1)
-          if [ -z "$latest_tag" ]; then
-            latest_tag="v0.0.0"
+          next_tag_input="${NEXT_TAG_INPUT:-}"
+          previous_tag_input="${PREVIOUS_TAG_INPUT:-}"
+
+          if [ -z "$next_tag_input" ] || [ -z "$previous_tag_input" ]; then
+            echo "Both next-tag and previous-tag inputs are required."
+            exit 1
           fi
-          previous_tag="$latest_tag"
-          version="${latest_tag#v}"
-          IFS='.' read -r major minor patch <<<"$version"
-          major=${major:-0}
-          minor=${minor:-0}
-          patch=${patch:-0}
 
-          case "$version_bump" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
-          esac
+          new_tag="$next_tag_input"
+          previous_tag="$previous_tag_input"
 
-          new_tag="v${major}.${minor}.${patch}"
           echo "Creating tag $new_tag (previous tag $previous_tag)."
-          git tag -a "$new_tag" -m "Automated $version_bump release"
+          git tag -a "$new_tag" -m "Automated release $new_tag"
           git push origin "$new_tag"
 
           echo "::notice title=Tag created::${new_tag} (from ${previous_tag})"

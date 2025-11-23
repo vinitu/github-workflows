@@ -1,0 +1,95 @@
+name: Compute Next Tag
+
+on:
+  workflow_call:
+    inputs:
+      target-branch:
+        description: "Branch to fetch before calculating the next tag."
+        required: false
+        default: main
+        type: string
+      version-bump:
+        description: "Which part of the semver should be incremented (major/minor/patch)."
+        required: true
+        type: string
+    secrets:
+      gh_token:
+        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        required: false
+    outputs:
+      new-tag:
+        description: "Next tag derived from the latest v* tag and the selected bump."
+        value: ${{ jobs.calculate.outputs.new-tag }}
+      previous-tag:
+        description: "Latest tag used as the base for the next version."
+        value: ${{ jobs.calculate.outputs.previous-tag }}
+
+permissions:
+  contents: read
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      new-tag: ${{ steps.compute.outputs.new_tag }}
+      previous-tag: ${{ steps.compute.outputs.previous_tag }}
+    steps:
+      - name: Check out repository with tags
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target-branch }}
+          fetch-depth: 0
+
+      - name: Compute next tag
+        id: compute
+        env:
+          VERSION_BUMP_INPUT: ${{ inputs.version-bump }}
+        run: |
+          set -euo pipefail
+
+          version_bump="${VERSION_BUMP_INPUT,,}"
+          case "$version_bump" in
+            major|minor|patch) ;;
+            *)
+              echo "Unsupported version bump '$version_bump'."
+              exit 1
+              ;;
+          esac
+
+          git fetch --tags
+
+          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$latest_tag" ]; then
+            latest_tag="v0.0.0"
+          fi
+          previous_tag="$latest_tag"
+
+          version="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<<"$version"
+          major=${major:-0}
+          minor=${minor:-0}
+          patch=${patch:-0}
+
+          case "$version_bump" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+
+          new_tag="v${major}.${minor}.${patch}"
+
+          {
+            echo "new_tag=$new_tag"
+            echo "previous_tag=$previous_tag"
+          } >> "$GITHUB_OUTPUT"
