@@ -109,6 +109,12 @@ jobs:
               continue
             fi
 
+            is_draft=$(gh pr view "$number" -R "$REPO" --json isDraft --jq '.isDraft')
+            if [ "$is_draft" = "true" ]; then
+              echo "Skipping PR #$number because it is a draft."
+              continue
+            fi
+
             if [[ "$head_lower" == wip* || "$head_lower" == */wip* ]]; then
               echo "Skipping PR #$number because head branch is marked WIP ($head)."
               continue
