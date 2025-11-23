@@ -3,6 +3,16 @@ name: Deploy Static Site to S3
 on:
   workflow_call:
     inputs:
+      target-branch:
+        description: "Branch to check out before syncing."
+        required: false
+        default: master
+        type: string
+      ref:
+        description: "Optional explicit git ref (commit SHA/tag/branch) to deploy; overrides target-branch when set."
+        required: false
+        default: ""
+        type: string
       bucket:
         description: "Destination S3 bucket name (without the s3:// prefix)."
         required: true
@@ -32,11 +42,6 @@ on:
         required: false
         default: true
         type: boolean
-      cloudflare-api-token:
-        description: "Optional Cloudflare API token with purge_cache permission."
-        required: false
-        default: ""
-        type: string
       email-subject:
         description: "Subject for the SES notification email (defaults to bucket name)."
         required: false
@@ -44,16 +49,6 @@ on:
         type: string
       email-body:
         description: "Body for the SES notification email."
-        required: false
-        default: ""
-        type: string
-      email-from:
-        description: "Sender address for SES notifications."
-        required: false
-        default: ""
-        type: string
-      email-to:
-        description: "Recipient address for SES notifications."
         required: false
         default: ""
         type: string
@@ -66,6 +61,15 @@ on:
         required: true
       aws_session_token:
         description: "Optional session token for temporary credentials."
+        required: false
+      cloudflare_api_token:
+        description: "Token with purge_cache permission."
+        required: false
+      email_from:
+        description: "Sender address for SES notifications."
+        required: false
+      email_to:
+        description: "Recipient address for SES notifications."
         required: false
     outputs:
       deployed:
@@ -88,6 +92,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || inputs.target-branch }}
+          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -117,10 +124,10 @@ jobs:
           echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Purge Cloudflare cache
-        if: ${{ inputs.purge-cloudflare && inputs.cloudflare-zone-id != '' && inputs.cloudflare-api-token != '' }}
+        if: ${{ inputs.purge-cloudflare && inputs.cloudflare-zone-id != '' && env.CLOUDFLARE_API_TOKEN != '' }}
         env:
           CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare-zone-id }}
-          CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare_api_token }}
         run: |
           set -euo pipefail
           curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
@@ -129,10 +136,10 @@ jobs:
             --data '{"purge_everything":true}'
 
       - name: Send SES notification
-        if: ${{ inputs.email-from != '' && inputs.email-to != '' }}
+        if: ${{ env.EMAIL_FROM != '' && env.EMAIL_TO != '' }}
         env:
-          EMAIL_FROM: ${{ inputs.email-from }}
-          EMAIL_TO: ${{ inputs.email-to }}
+          EMAIL_FROM: ${{ secrets.email_from }}
+          EMAIL_TO: ${{ secrets.email_to }}
           CUSTOM_SUBJECT: ${{ inputs.email-subject }}
           CUSTOM_BODY: ${{ inputs.email-body }}
         run: |

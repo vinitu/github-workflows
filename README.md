@@ -141,18 +141,20 @@ Syncs a directory to an S3 bucket with optional Cloudflare cache purge and SES n
 - `source` (default `public`): local directory to sync.
 - `aws-region` (default `us-west-2`): region for S3/SES calls.
 - `delete-extra-files` (default `true`): remove objects not present locally.
+- `target-branch` (default `master`): branch to check out before syncing.
+- `ref` (optional): explicit git ref (commit SHA/tag/branch) to deploy; overrides `target-branch` when set.
 - `cloudflare-zone-id` (optional): zone to purge after deploy.
 - `purge-cloudflare` (default `true`): whether to purge the zone when credentials are provided.
-- `cloudflare-api-token` (optional): Cloudflare token (pass a secret from the caller).
 - `email-subject` (optional): SES email subject (defaults to the bucket name).
 - `email-body` (optional): SES email body (defaults to an auto-generated message).
-- `email-from` (optional): sender address for SES notifications (pass a secret from the caller).
-- `email-to` (optional): recipient address for SES notifications (pass a secret from the caller).
 
 **Secrets**
 - `aws_access_key_id` (required)
 - `aws_secret_access_key` (required)
 - `aws_session_token` (optional)
+- `cloudflare_api_token` (optional)
+- `email_from` (optional)
+- `email_to` (optional)
 
 **Outputs**
 - `deployed`: `true` when the S3 sync completes.
@@ -164,18 +166,19 @@ jobs:
     needs: tests
     uses: vinitu-net/github-workflows/.github/workflows/workflow-deploy-to-s3.yml@vX.Y.Z
     with:
+      ref: ${{ github.sha }}
       bucket: www.example.com
       source: public
       aws-region: us-west-2
       delete-extra-files: true
       cloudflare-zone-id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-      cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       email-subject: "Site deployed"
-      email-from: ${{ secrets.EMAIL_FROM }}
-      email-to: ${{ secrets.EMAIL_TO }}
     secrets:
       aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
       aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      email_from: ${{ secrets.EMAIL_FROM }}
+      email_to: ${{ secrets.EMAIL_TO }}
 ```
 
 ### End-to-end usage in a caller repo
