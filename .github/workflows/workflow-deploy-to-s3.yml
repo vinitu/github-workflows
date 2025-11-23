@@ -1,0 +1,157 @@
+name: Deploy Static Site to S3
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: "Destination S3 bucket name (without the s3:// prefix)."
+        required: true
+        type: string
+      source:
+        description: "Directory to sync to the S3 bucket."
+        required: false
+        default: public
+        type: string
+      aws-region:
+        description: "AWS region for S3/SES calls."
+        required: false
+        default: us-west-2
+        type: string
+      delete-extra-files:
+        description: "When true, remove objects from the bucket that are not present locally."
+        required: false
+        default: true
+        type: boolean
+      cloudflare-zone-id:
+        description: "Optional Cloudflare Zone ID for cache purge."
+        required: false
+        default: ""
+        type: string
+      purge-cloudflare:
+        description: "Purge the entire Cloudflare cache when a zone ID and API token are provided."
+        required: false
+        default: true
+        type: boolean
+      cloudflare-api-token:
+        description: "Optional Cloudflare API token with purge_cache permission."
+        required: false
+        default: ""
+        type: string
+      email-subject:
+        description: "Subject for the SES notification email (defaults to bucket name)."
+        required: false
+        default: ""
+        type: string
+      email-body:
+        description: "Body for the SES notification email."
+        required: false
+        default: ""
+        type: string
+      email-from:
+        description: "Sender address for SES notifications."
+        required: false
+        default: ""
+        type: string
+      email-to:
+        description: "Recipient address for SES notifications."
+        required: false
+        default: ""
+        type: string
+    secrets:
+      aws_access_key_id:
+        description: "AWS access key for S3/SES."
+        required: true
+      aws_secret_access_key:
+        description: "AWS secret key for S3/SES."
+        required: true
+      aws_session_token:
+        description: "Optional session token for temporary credentials."
+        required: false
+    outputs:
+      deployed:
+        description: "True when the sync step completed."
+        value: ${{ jobs.deploy.outputs.deployed }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Sync static assets
+    runs-on: ubuntu-latest
+    outputs:
+      deployed: ${{ steps.sync.outputs.deployed }}
+    env:
+      AWS_REGION: ${{ inputs.aws-region }}
+      BUCKET: ${{ inputs.bucket }}
+      SOURCE_DIR: ${{ inputs.source }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-session-token: ${{ secrets.aws_session_token }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Sync directory to S3
+        id: sync
+        env:
+          DELETE_FLAG: ${{ inputs.delete-extra-files }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$SOURCE_DIR" ]; then
+            echo "Source directory '$SOURCE_DIR' does not exist." >&2
+            exit 1
+          fi
+
+          delete_arg=""
+          if [ "${DELETE_FLAG,,}" = "true" ]; then
+            delete_arg="--delete"
+          fi
+
+          aws s3 sync "$SOURCE_DIR" "s3://${BUCKET}" $delete_arg
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Purge Cloudflare cache
+        if: ${{ inputs.purge-cloudflare && inputs.cloudflare-zone-id != '' && inputs.cloudflare-api-token != '' }}
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare-zone-id }}
+          CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        run: |
+          set -euo pipefail
+          curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}'
+
+      - name: Send SES notification
+        if: ${{ inputs.email-from != '' && inputs.email-to != '' }}
+        env:
+          EMAIL_FROM: ${{ inputs.email-from }}
+          EMAIL_TO: ${{ inputs.email-to }}
+          CUSTOM_SUBJECT: ${{ inputs.email-subject }}
+          CUSTOM_BODY: ${{ inputs.email-body }}
+        run: |
+          set -euo pipefail
+
+          subject="${CUSTOM_SUBJECT}"
+          if [ -z "$subject" ]; then
+            subject="Deployment to ${BUCKET}"
+          fi
+
+          body="${CUSTOM_BODY}"
+          if [ -z "$body" ]; then
+            body="Static site synced to s3://${BUCKET} by ${GITHUB_ACTOR} (run ${GITHUB_RUN_ID}) in ${GITHUB_REPOSITORY}."
+          fi
+
+          aws ses send-email \
+            --from "$EMAIL_FROM" \
+            --destination "ToAddresses=$EMAIL_TO" \
+            --message "{
+              \"Subject\": {\"Data\": \"${subject}\", \"Charset\": \"utf8\"},
+              \"Body\": {\"Text\": {\"Data\": \"${body}\", \"Charset\": \"utf8\"}}
+            }"
