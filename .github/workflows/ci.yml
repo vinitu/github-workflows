@@ -1,0 +1,114 @@
+name: CI · Merge · Release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ci-github-workflows
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Run actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install actionlint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
+            | bash -s -- latest /usr/local/bin
+
+      - name: Run actionlint
+        run: actionlint
+
+  determine_version:
+    name: Detect version bump
+    needs:
+      - lint
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
+    uses: ./.github/workflows/workflow-determine-version-bump.yml
+    with:
+      target-branch: main
+      major-branch-prefixes: |
+        major/
+      minor-branch-prefixes: |
+        feature/
+        features/
+      patch-branch-prefixes: |
+        fix/
+        fixes/
+      default: patch
+      pull-requests: ${{ toJson(github.event.pull_request) }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  merge_prs:
+    name: Auto-merge PRs
+    needs: determine_version
+    if: ${{ needs.determine_version.result == 'success' && needs.determine_version.outputs.matching_pr == 'true' }}
+    uses: ./.github/workflows/workflow-merge-pull-requests.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      target-branch: main
+      merge-method: squash
+      pull-requests: ${{ toJson(github.event.pull_request) }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  calculate_tag:
+    name: Compute next tag
+    needs:
+      - determine_version
+      - merge_prs
+    if: ${{ needs.determine_version.result == 'success' && needs.merge_prs.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
+    uses: ./.github/workflows/workflow-compute-next-tag.yml
+    with:
+      target-branch: main
+      version-bump: ${{ needs.determine_version.outputs['version-bump'] }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create_tag:
+    name: Create git tag
+    needs:
+      - determine_version
+      - merge_prs
+      - calculate_tag
+    if: ${{ needs.merge_prs.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
+    uses: ./.github/workflows/workflow-create-tag.yml
+    with:
+      target-branch: main
+      next-tag: ${{ needs.calculate_tag.outputs['new-tag'] }}
+      previous-tag: ${{ needs.calculate_tag.outputs['previous-tag'] }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create_release:
+    name: Publish release
+    needs:
+      - merge_prs
+      - create_tag
+    if: ${{ needs.create_tag.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
+    uses: ./.github/workflows/workflow-create-release.yml
+    with:
+      tag-name: ${{ needs.create_tag.outputs['new-tag'] }}
+      previous-tag: ${{ needs.create_tag.outputs['previous-tag'] }}
+      merged-prs: ${{ needs.merge_prs.outputs['merged-prs'] }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
