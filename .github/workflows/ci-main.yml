@@ -1,0 +1,73 @@
+name: CI · Main Push · Patch Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-main-github-workflows
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Run actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install actionlint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
+            | bash -s -- latest /usr/local/bin
+
+      - name: Run actionlint
+        run: actionlint
+
+  calculate_tag:
+    name: Compute next tag
+    needs:
+      - lint
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor != 'github-actions[bot]' &&
+      needs.lint.result == 'success'
+    uses: ./.github/workflows/workflow-compute-next-tag.yml
+    with:
+      target-branch: main
+      version-bump: patch
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create_tag:
+    name: Create git tag
+    needs:
+      - lint
+      - calculate_tag
+    if: ${{ needs.calculate_tag.result == 'success' }}
+    uses: ./.github/workflows/workflow-create-tag.yml
+    with:
+      target-branch: main
+      next-tag: ${{ needs.calculate_tag.outputs['new-tag'] }}
+      previous-tag: ${{ needs.calculate_tag.outputs['previous-tag'] }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  create_release:
+    name: Publish release
+    needs:
+      - create_tag
+    if: ${{ needs.create_tag.result == 'success' }}
+    uses: ./.github/workflows/workflow-create-release.yml
+    with:
+      tag-name: ${{ needs.create_tag.outputs['new-tag'] }}
+      previous-tag: ${{ needs.create_tag.outputs['previous-tag'] }}
+      merged-prs: "[]"
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}

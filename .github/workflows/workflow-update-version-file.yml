@@ -1,0 +1,74 @@
+name: Update version file
+
+on:
+  workflow_call:
+    inputs:
+      target-branch:
+        description: Branch to check out before writing the version file
+        required: false
+        default: master
+        type: string
+      version-file:
+        description: Path to the version file to overwrite
+        required: false
+        default: public/version.txt
+        type: string
+      next-tag:
+        description: Tag value to write into the version file
+        required: true
+        type: string
+    secrets:
+      gh_token:
+        required: true
+
+    outputs:
+      new-tag:
+        description: Tag that was written into the version file
+        value: ${{ jobs.update_version_file.outputs.new_tag }}
+
+jobs:
+  update_version_file:
+    name: Update version file
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.write_version.outputs.new_tag }}
+    steps:
+      - name: Check out branch with tags
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs['target-branch'] }}
+          fetch-depth: 0
+          token: ${{ secrets.gh_token }}
+
+      - name: Write version marker
+        id: write_version
+        env:
+          NEXT_TAG: ${{ inputs['next-tag'] }}
+          VERSION_FILE: ${{ inputs['version-file'] }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_TAG:-}" ]; then
+            echo "next-tag input is required" >&2
+            exit 1
+          fi
+          mkdir -p "$(dirname "$VERSION_FILE")"
+          printf '%s\n' "$NEXT_TAG" > "$VERSION_FILE"
+          echo "new_tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version marker
+        env:
+          VERSION_FILE: ${{ inputs['version-file'] }}
+          NEW_TAG: ${{ steps.write_version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$VERSION_FILE"
+          if git diff --cached --quiet; then
+            echo "Version file already up to date."
+            exit 0
+          fi
+          git commit -m "Record version ${NEW_TAG}"
+          git push origin HEAD:${{ inputs['target-branch'] }}
