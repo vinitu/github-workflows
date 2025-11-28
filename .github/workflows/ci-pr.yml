@@ -1,4 +1,4 @@
-name: CI · Merge · Release
+name: CI · PR Auto-merge · Release
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ci-github-workflows
+  group: ci-pr-github-workflows
   cancel-in-progress: true
 
 jobs:

@@ -112,6 +112,30 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+### `workflow-update-version-file.yml`
+Writes the provided tag into a version file on a target branch and pushes the commit.
+
+**Inputs**
+- `target-branch` (default `master`): branch to check out before writing the version file.
+- `version-file` (default `public/version.txt`): path to overwrite with the new tag.
+- `next-tag` (required): tag value to write.
+
+**Outputs**
+- `new-tag`: tag that was written.
+
+**Example**
+```yaml
+jobs:
+  write-version:
+    uses: vinitu-net/github-workflows/.github/workflows/workflow-update-version-file.yml@vX.Y.Z
+    with:
+      target-branch: master
+      version-file: public/version.txt
+      next-tag: ${{ needs.calculate-tag.outputs.new-tag }}
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+```
+
 ### `workflow-create-release.yml`
 Publishes a GitHub Release for a given tag. If `merged-prs` is omitted or empty, it collects merged PRs between `previous-tag` and `tag-name`.
 
