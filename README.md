@@ -20,6 +20,12 @@ Detects which semver segment to bump for a PR targeting a branch.
 - `version-bump`: `major`, `minor`, or `patch`.
 - `matching_pr`: `true` if a PR against `target-branch` was found.
 
+**Branch prefix rules**
+- Major bump examples: `major/`.
+- Minor bump examples: `feature/`, `features/`, `release/`, `releases/`.
+- Patch bump examples: `fix/`, `fixes/`.
+- If none match, `default` is applied (by default, `patch`).
+
 **Example**
 ```yaml
 jobs:
@@ -31,6 +37,8 @@ jobs:
       minor-branch-prefixes: |
         feature/
         features/
+        release/
+        releases/
       patch-branch-prefixes: |
         fix/
         fixes/
@@ -150,7 +158,7 @@ jobs:
   create-release:
     uses: vinitu-net/github-workflows/.github/workflows/workflow-create-release.yml@vX.Y.Z
     with:
-      tag-name: ${{ needs.create-tag.outputs.new-tag }}
+      tag-name: ${{ needs.create-tag outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}
       merged-prs: ${{ needs.merge.outputs.merged-prs }}
     secrets:
@@ -216,6 +224,8 @@ jobs:
       minor-branch-prefixes: |
         feature/
         features/
+        release/
+        releases/
       patch-branch-prefixes: |
         fix/
         fixes/
