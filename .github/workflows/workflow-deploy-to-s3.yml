@@ -122,12 +122,16 @@ jobs:
           echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Purge Cloudflare cache
-        if: ${{ inputs.purge-cloudflare && secrets.cloudflare_zone_id != '' && secrets.cloudflare_api_token != '' }}
+        if: ${{ inputs.purge-cloudflare }}
         env:
           CLOUDFLARE_ZONE_ID: ${{ secrets.cloudflare_zone_id }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare_api_token }}
         run: |
           set -euo pipefail
+          if [ -z "${CLOUDFLARE_ZONE_ID:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Cloudflare credentials not provided, skipping cache purge."
+            exit 0
+          fi
           curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
