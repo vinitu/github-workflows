@@ -32,11 +32,6 @@ on:
         required: false
         default: true
         type: boolean
-      cloudflare-zone-id:
-        description: "Optional Cloudflare Zone ID for cache purge."
-        required: false
-        default: ""
-        type: string
       purge-cloudflare:
         description: "Purge the entire Cloudflare cache when a zone ID and API token are provided."
         required: false
@@ -61,6 +56,9 @@ on:
         required: true
       aws_session_token:
         description: "Optional session token for temporary credentials."
+        required: false
+      cloudflare_zone_id:
+        description: "Cloudflare Zone ID for cache purge."
         required: false
       cloudflare_api_token:
         description: "Token with purge_cache permission."
@@ -124,9 +122,9 @@ jobs:
           echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Purge Cloudflare cache
-        if: ${{ inputs.purge-cloudflare && inputs.cloudflare-zone-id != '' && env.CLOUDFLARE_API_TOKEN != '' }}
+        if: ${{ inputs.purge-cloudflare && secrets.cloudflare_zone_id != '' && secrets.cloudflare_api_token != '' }}
         env:
-          CLOUDFLARE_ZONE_ID: ${{ inputs.cloudflare-zone-id }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.cloudflare_zone_id }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.cloudflare_api_token }}
         run: |
           set -euo pipefail
