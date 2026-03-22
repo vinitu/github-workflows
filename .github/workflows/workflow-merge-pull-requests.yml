@@ -131,7 +131,7 @@ jobs:
             fi
 
             echo "Merging PR #$number with method $merge_method..."
-            gh pr merge "$number" -R "$REPO" "$merge_flag" --delete-branch --body "Merged automatically after successful CI."
+            gh pr merge "$number" -R "$REPO" "$merge_flag" --auto --delete-branch --body "Merged automatically after successful CI."
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
