@@ -125,7 +125,7 @@ Writes the provided tag into a version file on a target branch and pushes the co
 
 **Inputs**
 - `target-branch` (default `master`): branch to check out before writing the version file.
-- `version-file` (default `public/version.txt`): path to overwrite with the new tag.
+- `version-file` (default `public/version.txt`): path to overwrite with the new tag; pass multiple paths one per line to update them all in a single commit.
 - `next-tag` (required): tag value to write.
 
 **Outputs**

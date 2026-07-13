@@ -9,7 +9,7 @@ on:
         default: master
         type: string
       version-file:
-        description: Path to the version file to overwrite
+        description: Path to the version file to overwrite; pass multiple paths one per line to update them in a single commit
         required: false
         default: public/version.txt
         type: string
@@ -53,8 +53,11 @@ jobs:
             echo "next-tag input is required" >&2
             exit 1
           fi
-          mkdir -p "$(dirname "$VERSION_FILE")"
-          printf '%s\n' "$NEXT_TAG" > "$VERSION_FILE"
+          while IFS= read -r version_file; do
+            [ -z "$version_file" ] && continue
+            mkdir -p "$(dirname "$version_file")"
+            printf '%s\n' "$NEXT_TAG" > "$version_file"
+          done <<< "$VERSION_FILE"
           echo "new_tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Commit version marker
@@ -65,7 +68,10 @@ jobs:
           set -euo pipefail
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$VERSION_FILE"
+          while IFS= read -r version_file; do
+            [ -z "$version_file" ] && continue
+            git add "$version_file"
+          done <<< "$VERSION_FILE"
           if git diff --cached --quiet; then
             echo "Version file already up to date."
             exit 0
