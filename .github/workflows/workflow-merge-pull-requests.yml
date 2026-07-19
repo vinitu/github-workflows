@@ -131,7 +131,22 @@ jobs:
             fi
 
             echo "Merging PR #$number with method $merge_method..."
-            gh pr merge "$number" -R "$REPO" "$merge_flag" --auto --delete-branch --body "Merged automatically after successful CI."
+            # Prefer auto-merge (waits for required checks). Repos without the
+            # auto-merge feature (e.g. private repos on plans that lack it) reject
+            # --auto; fall back to a direct merge, which is safe here because this
+            # job runs after CI, so the required checks are already green.
+            merge_err=$(mktemp)
+            if ! gh pr merge "$number" -R "$REPO" "$merge_flag" --auto --delete-branch --body "Merged automatically after successful CI." 2>"$merge_err"; then
+              if grep -qi "auto merge is not allowed" "$merge_err"; then
+                echo "Auto-merge is disabled on $REPO; performing a direct merge instead."
+                gh pr merge "$number" -R "$REPO" "$merge_flag" --delete-branch --body "Merged automatically after successful CI."
+              else
+                cat "$merge_err" >&2
+                rm -f "$merge_err"
+                exit 1
+              fi
+            fi
+            rm -f "$merge_err"
 
             merged_any="true"
             entry=$(jq -n --arg number "$number" --arg head "$head" --arg title "$title" --arg author "$author" '{number:$number,head:$head,title:$title,author:$author}')
