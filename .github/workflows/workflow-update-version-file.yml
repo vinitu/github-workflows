@@ -36,7 +36,7 @@ jobs:
       new_tag: ${{ steps.write_version.outputs.new_tag }}
     steps:
       - name: Check out branch with tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs['target-branch'] }}
           fetch-depth: 0

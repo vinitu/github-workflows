@@ -89,7 +89,7 @@ jobs:
       SOURCE_DIR: ${{ inputs.source }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || inputs.target-branch }}
           fetch-depth: 0
