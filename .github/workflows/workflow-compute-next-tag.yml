@@ -37,7 +37,7 @@ jobs:
       previous-tag: ${{ steps.compute.outputs.previous_tag }}
     steps:
       - name: Check out repository with tags
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.target-branch }}
           fetch-depth: 0
