@@ -26,9 +26,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     # No `permissions:` here on purpose: the job inherits the caller's
-    # token. It needs contents: write; with pull-requests: read as well the
-    # notes list the merged pull requests. Requesting pull-requests here
-    # would fail every caller that grants only contents: write.
+    # token. It needs contents: write; a private repository also needs
+    # pull-requests: read for the notes to list the merged pull requests.
+    # Requesting pull-requests here would fail every caller that grants only
+    # contents: write.
     steps:
       - name: Create GitHub release
         env:
@@ -88,12 +89,19 @@ jobs:
             echo "No merged PRs identified between ${previous_tag}...${tag}"
           fi
 
-          changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
+          # .number is a string in merged-prs from workflow-merge-pull-requests
+          # and a number from `gh pr view`; tostring handles both. jq cannot
+          # add a string and a number, and that error left the notes empty.
+          if ! changes=$(jq -r --arg repo "$GITHUB_REPOSITORY" '
             if length == 0 then "" else
-              map("- " + (.title // ("Pull request #" + .number)) + " by @" + ((.author // "bot")) +
-                  " in [#" + .number + "](https://github.com/" + $repo + "/pull/" + .number + ")")
+              map((.number | tostring) as $n
+                  | "- " + (.title // ("Pull request #" + $n)) + " by @" + (.author // "bot") +
+                    " in [#" + $n + "](https://github.com/" + $repo + "/pull/" + $n + ")")
               | .[]
-            end' <<<"$merged_json" || true)
+            end' <<<"$merged_json"); then
+            echo "::warning title=Release notes::could not format the merged pull requests: ${merged_json}"
+            changes=""
+          fi
 
           {
             echo "## What's Changed"
