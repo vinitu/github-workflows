@@ -115,9 +115,13 @@ jobs:
               pull_request)
                 prs=$(jq -c '{number:.pull_request.number, base:{ref:.pull_request.base.ref}, head:{ref:.pull_request.head.ref}}' "$GITHUB_EVENT_PATH")
                 ;;
-              push)
+              push|workflow_dispatch)
+                # The pull request that merged this commit. Open pull requests
+                # that merely contain the commit do not count. An API failure
+                # fails the job instead of falling back to the default bump.
                 if [ -n "$repo" ] && [ -n "$commit_sha" ]; then
-                  prs=$(gh api "repos/${repo}/commits/${commit_sha}/pulls" --jq '.[] | {number:.number, base:{ref:.base.ref}, head:{ref:.head.ref}}' 2>/dev/null || true)
+                  prs=$(gh api "repos/${repo}/commits/${commit_sha}/pulls" \
+                    --jq '.[] | select(.merged_at != null) | {number:.number, base:{ref:.base.ref}, head:{ref:.head.ref}}')
                 fi
                 ;;
             esac

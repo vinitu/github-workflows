@@ -1,10 +1,14 @@
 name: Compute Next Tag
 
+# Finds the newest release tag of the form vX.Y.Z and applies the bump.
+# Pre-release tags such as v1.7.0-alpha are ignored on purpose: an
+# unanchored glob matches them, and bash then reads "0-alpha" as 0.
+
 on:
   workflow_call:
     inputs:
       target-branch:
-        description: "Branch to fetch before calculating the next tag."
+        description: "Deprecated and ignored. Tags are read from the whole repository through the GitHub API."
         required: false
         default: main
         type: string
@@ -14,14 +18,14 @@ on:
         type: string
     secrets:
       gh_token:
-        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        description: "Token for the GitHub API (defaults to the built-in GITHUB_TOKEN)."
         required: false
     outputs:
       new-tag:
-        description: "Next tag derived from the latest v* tag and the selected bump."
+        description: "Next tag derived from the newest vX.Y.Z tag and the selected bump."
         value: ${{ jobs.calculate.outputs.new-tag }}
       previous-tag:
-        description: "Latest tag used as the base for the next version."
+        description: "Newest vX.Y.Z tag used as the base, or v0.0.0 when there is none."
         value: ${{ jobs.calculate.outputs.previous-tag }}
 
 permissions:
@@ -36,15 +40,10 @@ jobs:
       new-tag: ${{ steps.compute.outputs.new_tag }}
       previous-tag: ${{ steps.compute.outputs.previous_tag }}
     steps:
-      - name: Check out repository with tags
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.target-branch }}
-          fetch-depth: 0
-
       - name: Compute next tag
         id: compute
         env:
+          GH_TOKEN: ${{ secrets.gh_token || github.token }}
           VERSION_BUMP_INPUT: ${{ inputs.version-bump }}
         run: |
           set -euo pipefail
@@ -53,43 +52,33 @@ jobs:
           case "$version_bump" in
             major|minor|patch) ;;
             *)
-              echo "Unsupported version bump '$version_bump'." >&2
+              echo "::error::version-bump must be major, minor or patch, got '$version_bump'"
               exit 1
               ;;
           esac
 
-          git fetch --tags
-
-          latest_tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
-          if [ -z "$latest_tag" ]; then
-            latest_tag="v0.0.0"
+          # Read the tags in a command of their own, so an API failure stops
+          # the job instead of looking like "no tags" and restarting at v0.0.1.
+          # matching-refs returns [] when the repository has no tags at all.
+          tags=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" \
+            --jq '.[].ref | sub("^refs/tags/"; "")')
+          previous_tag=$(grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<<"$tags" | sort -V | tail -n1 || true)
+          if [ -z "$previous_tag" ]; then
+            previous_tag="v0.0.0"
           fi
-          previous_tag="$latest_tag"
 
-          version="${latest_tag#v}"
-          IFS='.' read -r major minor patch <<<"$version"
-          major=${major:-0}
-          minor=${minor:-0}
-          patch=${patch:-0}
-
+          IFS='.' read -r major minor patch <<<"${previous_tag#v}"
+          # 10# reads "08" as eight, not as a broken octal number.
+          major=$((10#$major)); minor=$((10#$minor)); patch=$((10#$patch))
           case "$version_bump" in
-            major)
-              major=$((major + 1))
-              minor=0
-              patch=0
-              ;;
-            minor)
-              minor=$((minor + 1))
-              patch=0
-              ;;
-            patch)
-              patch=$((patch + 1))
-              ;;
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
           esac
-
           new_tag="v${major}.${minor}.${patch}"
 
+          echo "Previous tag: ${previous_tag}. Next tag: ${new_tag}."
           {
-            echo "new_tag=$new_tag"
-            echo "previous_tag=$previous_tag"
+            echo "new_tag=${new_tag}"
+            echo "previous_tag=${previous_tag}"
           } >> "$GITHUB_OUTPUT"
