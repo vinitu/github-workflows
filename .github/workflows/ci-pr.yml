@@ -1,4 +1,13 @@
-name: CI · PR Auto-merge · Release
+name: CI · PR Lint · Merge
+
+# Repo-local: lint every workflow, then merge the pull request. This
+# workflow never tags: ci-main.yml tags and releases on the push to main
+# that the merge produces. Tagging here would tag the previous commit,
+# because `gh pr merge --auto` returns before GitHub has merged.
+#
+# The merge uses the TOKEN secret (a personal access token). A merge made
+# with the built-in GITHUB_TOKEN starts no `on: push` workflow, so
+# ci-main.yml would never run.
 
 on:
   pull_request:
@@ -9,14 +18,12 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-  workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
-  group: ci-pr-github-workflows
+  group: ci-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -27,88 +34,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install actionlint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash \
-            | bash -s -- latest /usr/local/bin
-
       - name: Run actionlint
-        run: actionlint
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 .
+          ./actionlint -color
 
-  determine_version:
-    name: Detect version bump
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == false }}
-    uses: ./.github/workflows/workflow-determine-version-bump.yml
-    with:
-      target-branch: main
-      major-branch-prefixes: |
-        major/
-      minor-branch-prefixes: |
-        feature/
-        features/
-      patch-branch-prefixes: |
-        fix/
-        fixes/
-      default: patch
-      pull-requests: ${{ toJson(github.event.pull_request) }}
-    secrets:
-      gh_token: ${{ secrets.GITHUB_TOKEN }}
-
+  # The direct-merge fallback in workflow-merge-pull-requests.yml is safe
+  # here only because this job needs lint: it runs after the checks passed.
   merge_prs:
-    name: Auto-merge PRs
+    name: Merge PR
     needs:
       - lint
-      - determine_version
-    if: ${{ needs.determine_version.result == 'success' && needs.determine_version.outputs.matching_pr == 'true' && needs.lint.result == 'success' }}
-    uses: ./.github/workflows/workflow-merge-pull-requests.yml
+    if: ${{ github.event.pull_request.draft == false }}
     permissions:
       contents: write
       pull-requests: write
+    uses: ./.github/workflows/workflow-merge-pull-requests.yml
     with:
       target-branch: main
       merge-method: squash
       pull-requests: ${{ toJson(github.event.pull_request) }}
     secrets:
-      gh_token: ${{ secrets.GITHUB_TOKEN }}
-
-  calculate_tag:
-    name: Compute next tag
-    needs:
-      - determine_version
-      - merge_prs
-    if: ${{ needs.determine_version.result == 'success' && needs.merge_prs.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
-    uses: ./.github/workflows/workflow-compute-next-tag.yml
-    with:
-      target-branch: main
-      version-bump: ${{ needs.determine_version.outputs['version-bump'] }}
-    secrets:
-      gh_token: ${{ secrets.GITHUB_TOKEN }}
-
-  create_tag:
-    name: Create git tag
-    needs:
-      - determine_version
-      - merge_prs
-      - calculate_tag
-    if: ${{ needs.merge_prs.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
-    uses: ./.github/workflows/workflow-create-tag.yml
-    with:
-      target-branch: main
-      next-tag: ${{ needs.calculate_tag.outputs['new-tag'] }}
-      previous-tag: ${{ needs.calculate_tag.outputs['previous-tag'] }}
-    secrets:
-      gh_token: ${{ secrets.GITHUB_TOKEN }}
-
-  create_release:
-    name: Publish release
-    needs:
-      - merge_prs
-      - create_tag
-    if: ${{ needs.create_tag.result == 'success' && needs.merge_prs.outputs.merged == 'true' }}
-    uses: ./.github/workflows/workflow-create-release.yml
-    with:
-      tag-name: ${{ needs.create_tag.outputs['new-tag'] }}
-      previous-tag: ${{ needs.create_tag.outputs['previous-tag'] }}
-      merged-prs: ${{ needs.merge_prs.outputs['merged-prs'] }}
-    secrets:
-      gh_token: ${{ secrets.GITHUB_TOKEN }}
+      gh_token: ${{ secrets.TOKEN }}

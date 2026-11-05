@@ -25,6 +25,9 @@ on:
       new-tag:
         description: Tag that was written into the version file
         value: ${{ jobs.update_version_file.outputs.new_tag }}
+      sha:
+        description: Commit that holds the version file (the pushed commit, or the branch head when the file was already up to date); pass it as `sha` to workflow-create-tag.yml
+        value: ${{ jobs.update_version_file.outputs.sha }}
 
 jobs:
   update_version_file:
@@ -34,6 +37,7 @@ jobs:
       contents: write
     outputs:
       new_tag: ${{ steps.write_version.outputs.new_tag }}
+      sha: ${{ steps.commit_version.outputs.sha }}
     steps:
       - name: Check out branch with tags
         uses: actions/checkout@v7
@@ -61,6 +65,7 @@ jobs:
           echo "new_tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Commit version marker
+        id: commit_version
         env:
           VERSION_FILE: ${{ inputs['version-file'] }}
           NEW_TAG: ${{ steps.write_version.outputs.new_tag }}
@@ -74,7 +79,9 @@ jobs:
           done <<< "$VERSION_FILE"
           if git diff --cached --quiet; then
             echo "Version file already up to date."
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "Record version ${NEW_TAG}"
           git push origin HEAD:${{ inputs['target-branch'] }}
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

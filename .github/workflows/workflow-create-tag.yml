@@ -1,32 +1,51 @@
 name: Create Tag
 
+# Creates an annotated tag on one exact commit through the GitHub API, with
+# the caller's token.
+#
+# Pass a personal access token in `gh_token` when the tag must start other
+# workflows (`on: push: tags`). A tag created with the built-in GITHUB_TOKEN
+# starts nothing: GitHub drops events made by that token to stop workflows
+# from triggering each other.
+
 on:
   workflow_call:
     inputs:
-      target-branch:
-        description: "Branch to fetch before creating the tag."
-        required: false
-        default: main
+      sha:
+        description: "Full 40-character commit SHA to tag. Pass github.sha of the push to the release branch, or the sha output of workflow-update-version-file.yml."
+        required: true
         type: string
       next-tag:
-        description: "Explicit tag to create (required)."
+        description: "Tag to create, for example v1.2.3."
         required: true
         type: string
       previous-tag:
-        description: "Previously released tag that the next tag is based on (required)."
-        required: true
+        description: "Tag the new one is based on. Only passed through to the outputs."
+        required: false
+        default: ""
+        type: string
+      skip-marker:
+        description: "Text in the commit message that skips the tag (case-insensitive). Empty turns the check off."
+        required: false
+        default: "[skip release]"
         type: string
     secrets:
       gh_token:
-        description: "Token passed from caller (defaults to the built-in GITHUB_TOKEN)."
+        description: "Token that creates the tag (defaults to the built-in GITHUB_TOKEN)."
         required: false
     outputs:
+      created:
+        description: "true when the tag was created, false when it was skipped."
+        value: ${{ jobs.create-tag.outputs.created }}
       new-tag:
-        description: "Tag string that was created."
+        description: "The created tag, empty when skipped."
         value: ${{ jobs.create-tag.outputs.new-tag }}
       previous-tag:
-        description: "Previous tag that was used as the base."
+        description: "The previous-tag input, passed through."
         value: ${{ jobs.create-tag.outputs.previous-tag }}
+
+permissions:
+  contents: write
 
 jobs:
   create-tag:
@@ -34,58 +53,85 @@ jobs:
     permissions:
       contents: write
     outputs:
+      created: ${{ steps.create.outputs.created }}
       new-tag: ${{ steps.create.outputs.new_tag }}
       previous-tag: ${{ steps.create.outputs.previous_tag }}
     steps:
-      - name: Check out code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.target-branch }}
-
-      - name: Create and push tag
+      - name: Create tag
         id: create
         env:
-          NEXT_TAG_INPUT: ${{ inputs.next-tag }}
-          PREVIOUS_TAG_INPUT: ${{ inputs.previous-tag }}
-          TARGET_BRANCH_INPUT: ${{ inputs.target-branch }}
-          GH_TOKEN: ${{ secrets.gh_token != '' && secrets.gh_token || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.gh_token || github.token }}
+          USES_CALLER_TOKEN: ${{ secrets.gh_token != '' }}
+          SHA: ${{ inputs.sha }}
+          NEXT_TAG: ${{ inputs.next-tag }}
+          PREVIOUS_TAG: ${{ inputs.previous-tag }}
+          SKIP_MARKER: ${{ inputs.skip-marker }}
         run: |
           set -euo pipefail
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          skip() {
+            echo "::notice title=Tag skipped::$1"
+            {
+              echo "created=false"
+              echo "new_tag="
+              echo "previous_tag=${PREVIOUS_TAG}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
 
-          git fetch origin "$TARGET_BRANCH_INPUT" --tags
-          git checkout "$TARGET_BRANCH_INPUT"
-          git pull origin "$TARGET_BRANCH_INPUT"
-
-          next_tag_input="${NEXT_TAG_INPUT:-}"
-          previous_tag_input="${PREVIOUS_TAG_INPUT:-}"
-
-          if [ -z "$next_tag_input" ] || [ -z "$previous_tag_input" ]; then
-            echo "Both next-tag and previous-tag inputs are required."
+          if ! [[ "$NEXT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::next-tag must look like vX.Y.Z, got '$NEXT_TAG'"
+            exit 1
+          fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be a full 40-character commit SHA, got '$SHA'"
             exit 1
           fi
 
-          new_tag="$next_tag_input"
-          previous_tag="$previous_tag_input"
+          message=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}" --jq '.commit.message')
+          if [ -n "$SKIP_MARKER" ] && grep -qiF -- "$SKIP_MARKER" <<<"$message"; then
+            skip "commit ${SHA} contains '${SKIP_MARKER}'"
+          fi
 
-          echo "Creating tag $new_tag (previous tag $previous_tag)."
-          git tag -a "$new_tag" -m "Automated release $new_tag"
-          git push origin "$new_tag"
+          # A hand-pushed tag on this commit wins: never tag a commit twice.
+          # Capture first, cut after: piping gh into head can kill gh with
+          # SIGPIPE, and pipefail would then fail the job.
+          existing=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/tags" \
+            --jq ".[] | select(.commit.sha == \"${SHA}\") | .name")
+          existing=$(head -n1 <<<"$existing")
+          if [ -n "$existing" ]; then
+            skip "commit ${SHA} already has tag ${existing}"
+          fi
 
-          echo "::notice title=Tag created::${new_tag} (from ${previous_tag})"
+          # Two runs that computed the same tag: the second one stops here.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${NEXT_TAG}" >/dev/null 2>&1; then
+            echo "::error::tag ${NEXT_TAG} already exists on another commit; rerun after the other release finishes"
+            exit 1
+          fi
 
+          if [ "$USES_CALLER_TOKEN" != "true" ]; then
+            echo "::warning::No gh_token passed. The tag is created with GITHUB_TOKEN and will not start 'on: push: tags' workflows."
+          fi
+
+          tag_object=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="$NEXT_TAG" \
+            -f message="Automated release ${NEXT_TAG}" \
+            -f object="$SHA" \
+            -f type=commit \
+            --jq '.sha')
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${NEXT_TAG}" \
+            -f sha="$tag_object" >/dev/null
+
+          echo "::notice title=Tag created::${NEXT_TAG} on ${SHA} (previous ${PREVIOUS_TAG:-none})"
           {
-            echo "new_tag=$new_tag"
-            echo "previous_tag=$previous_tag"
+            echo "created=true"
+            echo "new_tag=${NEXT_TAG}"
+            echo "previous_tag=${PREVIOUS_TAG}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Tag summary
-        run: |
           {
             echo "### Tag"
-            echo "- New tag: ${{ steps.create.outputs.new_tag }}"
-            echo "- Previous tag: ${{ steps.create.outputs.previous_tag }}"
+            echo "- New tag: \`${NEXT_TAG}\`"
+            echo "- Commit: \`${SHA}\`"
+            echo "- Previous tag: \`${PREVIOUS_TAG:-none}\`"
           } >> "$GITHUB_STEP_SUMMARY"
