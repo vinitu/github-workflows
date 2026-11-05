@@ -55,4 +55,4 @@ jobs:
       merge-method: squash
       pull-requests: ${{ toJson(github.event.pull_request) }}
     secrets:
-      gh_token: ${{ secrets.TOKEN }}
+      gh_token: ${{ secrets.GHA_RELEASE_TOKEN }}
