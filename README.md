@@ -217,6 +217,9 @@ jobs:
 
 ### `workflow-create-release.yml`
 Publishes a GitHub Release for a given tag. If `merged-prs` is omitted or empty, it collects merged PRs between `previous-tag` and `tag-name`.
+The job inherits the caller's token: grant `contents: write`, and `pull-requests: read` for the
+notes to list the pull requests. Without the second one the notes say "No pull requests were
+merged in this release."
 
 **Inputs**
 - `tag-name` (required): tag to publish.
@@ -231,6 +234,7 @@ jobs:
     if: ${{ needs.create-tag.outputs.created == 'true' }}
     permissions:
       contents: write
+      pull-requests: read
     uses: vinitu/github-workflows/.github/workflows/workflow-create-release.yml@vX.Y.Z
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
@@ -370,6 +374,7 @@ jobs:
     if: ${{ needs.create-tag.outputs.created == 'true' }}
     permissions:
       contents: write
+      pull-requests: read
     uses: vinitu/github-workflows/.github/workflows/workflow-create-release.yml@vX.Y.Z
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
