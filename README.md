@@ -217,9 +217,8 @@ jobs:
 
 ### `workflow-create-release.yml`
 Publishes a GitHub Release for a given tag. If `merged-prs` is omitted or empty, it collects merged PRs between `previous-tag` and `tag-name`.
-The job inherits the caller's token: grant `contents: write`, and `pull-requests: read` for the
-notes to list the pull requests. Without the second one the notes say "No pull requests were
-merged in this release."
+The job inherits the caller's token: grant `contents: write`, and in a private repository also
+`pull-requests: read`, so the notes can read the pull requests.
 
 **Inputs**
 - `tag-name` (required): tag to publish.
