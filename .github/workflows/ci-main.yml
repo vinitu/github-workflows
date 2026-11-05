@@ -78,7 +78,7 @@ jobs:
       next-tag: ${{ needs.calculate_tag.outputs['new-tag'] }}
       previous-tag: ${{ needs.calculate_tag.outputs['previous-tag'] }}
     secrets:
-      gh_token: ${{ secrets.TOKEN }}
+      gh_token: ${{ secrets.GHA_RELEASE_TOKEN }}
 
   create_release:
     name: Publish release
