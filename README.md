@@ -3,7 +3,9 @@
 Reusable workflows to plug into other repos via `uses: vinitu/github-workflows/.github/workflows/<workflow>.yml@<tag>`.
 
 - Always pin to a release tag (auto-created on every merge to `main`); avoid `@main`.
-- Each workflow accepts `gh_token`; if omitted it falls back to the built-in `GITHUB_TOKEN`.
+- Each workflow that talks to the GitHub API accepts `gh_token`; if omitted it falls back to the
+  built-in `GITHUB_TOKEN`. `workflow-deploy-to-s3.yml` and `workflow-publish-image.yml` take their
+  own secrets instead (see their sections).
 - The repository moved from the `vinitu-net` organization to the `vinitu` account. Use `vinitu/`
   in `uses:`. `vinitu-net` is now a separate, empty organization.
 
@@ -18,6 +20,7 @@ push to main ──► workflow-determine-version-bump (PR looked up from the co
                  → workflow-compute-next-tag
                  → workflow-create-tag (on github.sha)
                  → workflow-create-release (only when created == 'true')
+                 → workflow-publish-image (optional, only when created == 'true', on the tag)
 ```
 
 Do not tag in the pull request run. `gh pr merge --auto` returns as soon as auto-merge is
@@ -238,6 +241,67 @@ jobs:
     with:
       tag-name: ${{ needs.create-tag.outputs.new-tag }}
       previous-tag: ${{ needs.create-tag.outputs.previous-tag }}
+```
+
+### `workflow-publish-image.yml`
+Builds one Docker image and pushes it to ghcr.io and, when asked, to Docker Hub. Call it after the
+tag exists (after `workflow-create-tag.yml`), so the image and the tag name the same commit. It
+creates no tag and no release.
+
+- ghcr.io uses the built-in `GITHUB_TOKEN`. The **caller must grant `packages: write`**: a
+  reusable workflow cannot get more than its caller has, and without it the push fails with 403.
+  This workflow takes no `gh_token`.
+- Docker Hub is used only when `dockerhub-namespace` is set **and** both Docker Hub secrets are
+  non-empty. A namespace with no secrets is a warning, not a failure, so a first release can go
+  to ghcr.io before the secrets exist.
+- Every value is checked in a step of its own before use (lowercase image name, valid Docker tag,
+  valid owner and namespace) and passed through `env:`, never interpolated into a script.
+- Pass the tagged commit as `ref`. Without it the run builds the commit that started the caller.
+
+**Inputs**
+- `image-name` (required): image name without registry or owner, lowercase (e.g. `fyta-exporter`).
+- `tag` (required): tag to push (e.g. `v1.2.3`).
+- `context` (default `.`): Docker build context.
+- `dockerfile` (default `Dockerfile`): Dockerfile path, relative to the repository root.
+- `platforms` (default `linux/amd64,linux/arm64`): comma separated target platforms.
+- `dockerhub-namespace` (default empty): Docker Hub user or organisation. Empty skips Docker Hub.
+- `ghcr-owner` (default empty): owner on ghcr.io. Empty means the owner of the calling repository.
+- `latest` (default `true`): also move the `latest` tag.
+- `ref` (default empty): commit, tag or branch to build. Empty means the caller's `github.sha`.
+- `qemu` (default `false`): set up QEMU. Turn it on only when the Dockerfile has `RUN` steps and
+  builds for a foreign architecture; a Dockerfile with `COPY` and `ENTRYPOINT` only needs none.
+
+**Secrets**
+- `dockerhub_username` (optional): Docker Hub user name.
+- `dockerhub_token` (optional): Docker Hub access token.
+
+**Outputs**
+- `images`: JSON array of the pushed image references (e.g. `["ghcr.io/vinitu/app:v1.2.3", ...]`).
+- `digest`: digest of the pushed image (`sha256:...`).
+
+Pushed tags: `ghcr.io/<owner>/<image-name>:<tag>`, the same with `:latest` when `latest` is on,
+and the two `<namespace>/<image-name>` equivalents when Docker Hub is used.
+
+The image gets the OCI labels `source`, `revision` (the built commit) and `version` (the tag).
+
+**Example** (in `ci-main.yml`, after the tag job)
+```yaml
+jobs:
+  publish-image:
+    needs: create-tag
+    if: ${{ needs.create-tag.outputs.created == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: vinitu/github-workflows/.github/workflows/workflow-publish-image.yml@vX.Y.Z
+    with:
+      image-name: my-app
+      tag: ${{ needs.create-tag.outputs.new-tag }}
+      ref: ${{ github.sha }}
+      dockerhub-namespace: ${{ vars.DOCKERHUB_NAMESPACE }}
+    secrets:
+      dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
 ```
 
 ### `workflow-deploy-to-s3.yml`

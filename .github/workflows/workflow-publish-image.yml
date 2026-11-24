@@ -1,0 +1,214 @@
+name: Publish Docker Image
+
+# Builds one Docker image and pushes it to ghcr.io and, when asked, to Docker Hub.
+#
+# Call it after the tag exists (after workflow-create-tag.yml): pass the tag as `tag`
+# and the tagged commit as `ref`. It never creates a tag or a release itself.
+#
+# The caller must grant `packages: write`. A reusable workflow cannot get more
+# than its caller has, so without it the push to ghcr.io fails with a 403.
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: "Image name without the registry or the owner (e.g. fyta-exporter). Lowercase."
+        required: true
+        type: string
+      tag:
+        description: "Image tag to push (e.g. v1.2.3)."
+        required: true
+        type: string
+      context:
+        description: "Docker build context."
+        required: false
+        default: "."
+        type: string
+      dockerfile:
+        description: "Path of the Dockerfile, relative to the repository root."
+        required: false
+        default: Dockerfile
+        type: string
+      platforms:
+        description: "Comma separated list of target platforms."
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+      dockerhub-namespace:
+        description: "Docker Hub user or organisation to push to. Empty skips Docker Hub."
+        required: false
+        default: ""
+        type: string
+      ghcr-owner:
+        description: "Owner on ghcr.io. Empty means the owner of the calling repository."
+        required: false
+        default: ""
+        type: string
+      latest:
+        description: "Also move the `latest` tag to this image."
+        required: false
+        default: true
+        type: boolean
+      ref:
+        description: "Commit, tag or branch to build. Empty means the commit that started the caller."
+        required: false
+        default: ""
+        type: string
+      qemu:
+        description: "Set up QEMU. Needed only when the Dockerfile has RUN steps and builds for a foreign architecture."
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      dockerhub_username:
+        description: "Docker Hub user name. Docker Hub is skipped without it."
+        required: false
+      dockerhub_token:
+        description: "Docker Hub access token. Docker Hub is skipped without it."
+        required: false
+    outputs:
+      images:
+        description: "JSON array of the image references that were pushed."
+        value: ${{ jobs.publish.outputs.images }}
+      digest:
+        description: "Digest of the pushed image (sha256:...)."
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # packages: write is capped by the caller's own permissions.
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      images: ${{ steps.tags.outputs.json }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      # Values come in through env: and are checked before anything uses them.
+      # Nothing from `inputs` is interpolated into a script.
+      - name: Check inputs and list the image tags
+        id: tags
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
+          TAG: ${{ inputs.tag }}
+          GHCR_OWNER: ${{ inputs.ghcr-owner || github.repository_owner }}
+          DOCKERHUB_NAMESPACE: ${{ inputs.dockerhub-namespace }}
+          DOCKERHUB_USERNAME: ${{ secrets.dockerhub_username }}
+          DOCKERHUB_TOKEN: ${{ secrets.dockerhub_token }}
+          WITH_LATEST: ${{ inputs.latest }}
+        run: |
+          set -euo pipefail
+
+          # ghcr.io refuses upper case in the repository path.
+          owner="$(printf '%s' "$GHCR_OWNER" | tr '[:upper:]' '[:lower:]')"
+          namespace="$(printf '%s' "$DOCKERHUB_NAMESPACE" | tr '[:upper:]' '[:lower:]')"
+
+          if ! [[ "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._/-]*$ ]]; then
+            echo "::error::image-name must be lowercase letters, digits, '.', '_', '-' or '/', got '${IMAGE_NAME}'"
+            exit 1
+          fi
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::tag is not a valid Docker tag, got '${TAG}'"
+            exit 1
+          fi
+          if ! [[ "$owner" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "::error::ghcr-owner is not a valid account name, got '${owner}'"
+            exit 1
+          fi
+          if [ -n "$namespace" ] && ! [[ "$namespace" =~ ^[a-z0-9][a-z0-9_.-]*$ ]]; then
+            echo "::error::dockerhub-namespace is not valid, got '${namespace}'"
+            exit 1
+          fi
+
+          # Docker Hub needs the namespace and both secrets. A namespace with
+          # no secrets is a warning, not a failure, so a first release can go
+          # out to ghcr.io before the Docker Hub secrets exist.
+          dockerhub=false
+          if [ -n "$namespace" ]; then
+            if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+              dockerhub=true
+            else
+              echo "::warning title=Docker Hub skipped::dockerhub-namespace is set, but dockerhub_username or dockerhub_token is empty"
+            fi
+          fi
+
+          refs=("ghcr.io/${owner}/${IMAGE_NAME}:${TAG}")
+          if [ "$WITH_LATEST" = "true" ]; then
+            refs+=("ghcr.io/${owner}/${IMAGE_NAME}:latest")
+          fi
+          if [ "$dockerhub" = "true" ]; then
+            refs+=("${namespace}/${IMAGE_NAME}:${TAG}")
+            if [ "$WITH_LATEST" = "true" ]; then
+              refs+=("${namespace}/${IMAGE_NAME}:latest")
+            fi
+          fi
+
+          {
+            echo "dockerhub=${dockerhub}"
+            echo "json=$(printf '%s\n' "${refs[@]}" | jq -R . | jq -s -c .)"
+            # The values were checked above, so the delimiter cannot appear in them.
+            echo "list<<TAGS_END"
+            printf '%s\n' "${refs[@]}"
+            echo "TAGS_END"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Read the commit that is built
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Log in to Docker Hub
+        if: ${{ steps.tags.outputs.dockerhub == 'true' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.dockerhub_username }}
+          password: ${{ secrets.dockerhub_token }}
+
+      # Only a Dockerfile with RUN steps runs anything on the foreign side.
+      - name: Set up QEMU
+        if: ${{ inputs.qemu }}
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.commit.outputs.sha }}
+            org.opencontainers.image.version=${{ inputs.tag }}
+
+      - name: Summary
+        env:
+          IMAGES: ${{ steps.tags.outputs.json }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Image published"
+            echo "- Digest: \`${DIGEST}\`"
+            jq -r '.[] | "- `" + . + "`"' <<<"$IMAGES"
+          } >> "$GITHUB_STEP_SUMMARY"
